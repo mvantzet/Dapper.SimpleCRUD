@@ -34,9 +34,23 @@ namespace Dapper.SimpleCRUDTests
         public int NotMappedInt { get; set; }
     }
 
+    //For .Net 4.5> [System.ComponentModel.DataAnnotations.Schema.Table("Users")]  or the attribute built into SimpleCRUD
+    [Table("Posts")]
+    public class Post
+    {
+        [Key]
+        public int Id { get; set; }
+        public string Text { get; set; }
+        public int UserId { get; set; }
+        public int ModeratorId { get; set; }
+        public User User { get; set; }
+        public User Moderator { get; set; }
+    }
+
     [Table("Users")]
     public class User1
     {
+        [Key]
         public int Id { get; set; }
         public string Name { get; set; }
         public int Age { get; set; }
@@ -177,7 +191,7 @@ namespace Dapper.SimpleCRUDTests
             IDbConnection connection;
             if (_dbtype == SimpleCRUD.Dialect.PostgreSQL)
             {
-                connection = new NpgsqlConnection(String.Format("Server={0};Port={1};User Id={2};Password={3};Database={4};", "localhost", "5432", "postgres", "postgrespass", "testdb"));
+                connection = new NpgsqlConnection(Program.PostgreSQLConnectionString);
                 SimpleCRUD.SetDialect(SimpleCRUD.Dialect.PostgreSQL);
             }
             else if (_dbtype == SimpleCRUD.Dialect.SQLite)
@@ -187,17 +201,41 @@ namespace Dapper.SimpleCRUDTests
             }
             else if (_dbtype == SimpleCRUD.Dialect.MySQL)
             {
-                connection = new MySqlConnection(String.Format("Server={0};Port={1};User Id={2};Password={3};Database={4};", "localhost", "3306", "root", "admin", "testdb"));
+                connection = new MySqlConnection(Program.MySqlConnectionString);
                 SimpleCRUD.SetDialect(SimpleCRUD.Dialect.MySQL);
             }
             else
             {
-                connection = new SqlConnection(@"Data Source = .\sqlexpress;Initial Catalog=DapperSimpleCrudTestDb;Integrated Security=True;MultipleActiveResultSets=true;");
+                connection = new SqlConnection(Program.SqlConnectionString);
                 SimpleCRUD.SetDialect(SimpleCRUD.Dialect.SQLServer);
             }
 
             connection.Open();
             return connection;
+        }
+
+        public void TestMultiMapping()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                var user = connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = connection.Insert(new User {Name = "Sally", Age = 30});
+                var post = connection.Insert(new Post {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value });
+                var post2 = connection.Insert(new Post {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value });
+
+                var posts = connection.Query<Post, User, User, Post>(@"select p.*, 1 as xyz, u.*, 1 as xyz, u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, splitOn: "xyz,xyz");
+
+                connection.Execute(@"Delete from ""Users""");
+                connection.Execute(@"Delete from ""Posts""");
+            }
         }
 
         //basic tests
@@ -313,7 +351,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestSimpleGetList2", Age = 10 });
                 var user = connection.GetList<User>(new { });
                 user.Count().IsEqualTo(2);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -328,7 +366,7 @@ namespace Dapper.SimpleCRUDTests
 
                 var user = connection.GetList<User>(new { Age = 10 });
                 user.Count().IsEqualTo(3);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -344,7 +382,7 @@ namespace Dapper.SimpleCRUDTests
 
                 var keyMasters = connection.GetList<KeyMaster>(new { Key1 = 1 });
                 keyMasters.Count().IsEqualTo(3);
-                connection.Execute("Delete from KeyMaster");
+                connection.Execute(@"Delete from ""KeyMaster""");
             }
         }
 
@@ -358,9 +396,9 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestFilteredWithSQLGetList3", Age = 10 });
                 connection.Insert(new User { Name = "TestFilteredWithSQLGetList4", Age = 11 });
 
-                var user = connection.GetList<User>("where Name like 'TestFilteredWithSQLGetList%' and Age = 10");
+                var user = connection.GetList<User>(@"where ""Name"" like 'TestFilteredWithSQLGetList%' and ""Age"" = 10");
                 user.Count().IsEqualTo(3);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -371,7 +409,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestGetListWithNullWhere", Age = 10 });
                 var user = connection.GetList<User>(null);
                 user.Count().IsEqualTo(1);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -382,7 +420,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestGetListWithoutWhere", Age = 10 });
                 var user = connection.GetList<User>();
                 user.Count().IsEqualTo(1);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -395,9 +433,9 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestsGetListWithParameters3", Age = 10 });
                 connection.Insert(new User { Name = "TestsGetListWithParameters4", Age = 11 });
 
-                var user = connection.GetList<User>("where Age > @Age", new { Age = 10 });
+                var user = connection.GetList<User>(@"where ""Age"" > @Age", new { Age = 10 });
                 user.Count().IsEqualTo(1);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -408,7 +446,7 @@ namespace Dapper.SimpleCRUDTests
                 var id = connection.Insert(new User { Name = "TestGetWithReadonlyProperty", Age = 10 });
                 var user = connection.Get<User>(id);
                 user.CreatedDate.Year.IsEqualTo(DateTime.Now.Year);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -420,7 +458,7 @@ namespace Dapper.SimpleCRUDTests
                 var user = connection.Get<User>(id);
                 //the date can't be 2001 - it should be the autogenerated date from the database
                 user.CreatedDate.Year.IsEqualTo(DateTime.Now.Year);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -436,7 +474,7 @@ namespace Dapper.SimpleCRUDTests
                 user = connection.Get<User>(id);
                 //don't allow changing created date since it has a readonly attribute
                 user.CreatedDate.Year.IsEqualTo(DateTime.Now.Year);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -447,7 +485,7 @@ namespace Dapper.SimpleCRUDTests
                 var id = connection.Insert(new User { Name = "TestGetWithNotMappedProperty", Age = 10, NotMappedInt = 1000 });
                 var user = connection.Get<User>(id);
                 user.NotMappedInt.IsEqualTo(0);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -458,7 +496,7 @@ namespace Dapper.SimpleCRUDTests
                 var id = connection.Insert(new User { Name = "TestInsertWithNotMappedProperty", Age = 10, CreatedDate = new DateTime(2001, 1, 1), NotMappedInt = 1000 });
                 var user = connection.Get<User>(id);
                 user.NotMappedInt.IsEqualTo(0);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -476,7 +514,7 @@ namespace Dapper.SimpleCRUDTests
 
                 user.NotMappedInt.IsEqualTo(0);
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -631,7 +669,7 @@ namespace Dapper.SimpleCRUDTests
             using (var connection = GetOpenConnection())
             {
                 //note - there's not support for inserts without a non-int id, so drop down to a normal execute
-                connection.Execute("INSERT INTO CITY (NAME, POPULATION) VALUES ('Morgantown', 31000)");
+                connection.Execute(@"INSERT INTO ""City"" (""Name"", ""Population"") VALUES ('Morgantown', 31000)");
                 var city = connection.Get<City>("Morgantown");
                 city.Population.IsEqualTo(31000);
             }
@@ -642,7 +680,7 @@ namespace Dapper.SimpleCRUDTests
             using (var connection = GetOpenConnection())
             {
                 //note - there's not support for inserts without a non-int id, so drop down to a normal execute
-                connection.Execute("INSERT INTO CITY (NAME, POPULATION) VALUES ('Fairmont', 18737)");
+                connection.Execute(@"INSERT INTO ""City"" (""Name"", ""Population"")  VALUES ('Fairmont', 18737)");
                 connection.Delete<City>("Fairmont").IsEqualTo(1);
             }
         }
@@ -753,7 +791,7 @@ namespace Dapper.SimpleCRUDTests
                 //tiny wait to let the inserts happen
                 var list = connection.GetList<User>(new { Age = 10 });
                 list.Count().IsEqualTo(3);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
 
             }
         }
@@ -770,7 +808,7 @@ namespace Dapper.SimpleCRUDTests
                 System.Threading.Thread.Sleep(300);
                 var list = connection.GetList<GUIDTest>(new { Name = "MultiInsertWithGuidAsync" });
                 list.Count().IsEqualTo(4);
-                connection.Execute("Delete from GUIDTest");
+                connection.Execute(@"Delete from ""GUIDTest""");
             }
         }
 
@@ -843,7 +881,7 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestSimpleGetListAsync2", Age = 10 });
                 var user = connection.GetListAsync<User>(new { });
                 user.Result.Count().IsEqualTo(2);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -858,7 +896,7 @@ namespace Dapper.SimpleCRUDTests
 
                 var user = connection.GetListAsync<User>(new { Age = 10 });
                 user.Result.Count().IsEqualTo(3);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -871,9 +909,9 @@ namespace Dapper.SimpleCRUDTests
                 connection.Insert(new User { Name = "TestFilteredGetListParametersAsync3", Age = 10 });
                 connection.Insert(new User { Name = "TestFilteredGetListParametersAsync4", Age = 11 });
 
-                var user = connection.GetListAsync<User>("where Age = @Age", new { Age = 10 });
+                var user = connection.GetListAsync<User>(@"where ""Age"" = @Age", new { Age = 10 });
                 user.Result.Count().IsEqualTo(3);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -892,10 +930,10 @@ namespace Dapper.SimpleCRUDTests
                 resultlist.Count().IsEqualTo(30);
                 connection.RecordCountAsync<User>().Result.IsEqualTo(30);
 
-                connection.RecordCountAsync<User>("where age = 10 or age = 11").Result.IsEqualTo(2);
+                connection.RecordCountAsync<User>(@"where ""Age"" = 10 or ""Age"" = 11").Result.IsEqualTo(2);
 
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
 
         }
@@ -915,10 +953,10 @@ namespace Dapper.SimpleCRUDTests
                 resultlist.Count().IsEqualTo(30);
                 connection.RecordCountAsync<User>().Result.IsEqualTo(30);
 
-                connection.RecordCountAsync<User>(new { age = 10 }).Result.IsEqualTo(1);
+                connection.RecordCountAsync<User>(new { Age = 10 }).Result.IsEqualTo(1);
 
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
 
         }
@@ -931,7 +969,7 @@ namespace Dapper.SimpleCRUDTests
                 id.Result.IsEqualTo(999);
                 var user = connection.GetAsync<UserWithoutAutoIdentity>(999);
                 user.Result.Name.IsEqualTo("User999Async");
-                connection.Execute("Delete from UserWithoutAutoIdentity");
+                connection.Execute(@"Delete from ""UserWithoutAutoIdentity""");
             }
         }
 
@@ -945,7 +983,7 @@ namespace Dapper.SimpleCRUDTests
                 var result = connection.GetAsync<KeyMaster>(new { Key1 = 1, Key2 = 2 });
                 result.Result.Key1.IsEqualTo(1);
                 result.Result.Key2.IsEqualTo(2);
-                connection.Execute("Delete from KeyMaster");
+                connection.Execute(@"Delete from ""KeyMaster""");
             }
         }
         public void TestInsertUsingGenericLimitedFieldsAsync()
@@ -1059,7 +1097,7 @@ namespace Dapper.SimpleCRUDTests
 
                 var strange = connection.GetList<StrangeColumnNames>(new { StrangeWord = "Strange 2" });
                 strange.Count().IsEqualTo(3);
-                connection.Execute("Delete from StrangeColumnNames");
+                connection.Execute(@"Delete from ""StrangeColumnNames""");
             }
         }
 
@@ -1077,7 +1115,7 @@ namespace Dapper.SimpleCRUDTests
                 var resultlist = connection.GetListPaged<User>(2, 10, null, null);
                 resultlist.Count().IsEqualTo(10);
                 resultlist.Skip(4).First().Name.IsEqualTo("Person 14");
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1092,10 +1130,10 @@ namespace Dapper.SimpleCRUDTests
                     x++;
                 } while (x < 30);
 
-                var resultlist = connection.GetListPaged<User>(1, 30, "where Age > @Age", null, new { Age = 14 });
+                var resultlist = connection.GetListPaged<User>(1, 30, @"where ""Age"" > @Age", null, new { Age = 14 });
                 resultlist.Count().IsEqualTo(15);
                 resultlist.First().Name.IsEqualTo("Person 15");
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1114,7 +1152,7 @@ namespace Dapper.SimpleCRUDTests
                 var resultlist = connection.GetListPaged<StrangeColumnNames>(2, 10, null, null);
                 resultlist.Count().IsEqualTo(10);
                 resultlist.Skip(4).First().Word.IsEqualTo("Word 14");
-                connection.Execute("Delete from StrangeColumnNames");
+                connection.Execute(@"Delete from ""StrangeColumnNames""");
             }
         }
         public void TestGetListPagedWithWhereClause()
@@ -1128,14 +1166,14 @@ namespace Dapper.SimpleCRUDTests
                     x++;
                 } while (x < 30);
 
-                var resultlist1 = connection.GetListPaged<User>(1, 3, "Where Name LIKE 'Person 2%'", "age desc");
+                var resultlist1 = connection.GetListPaged<User>(1, 3, @"Where ""Name"" LIKE 'Person 2%'", @"""Age"" desc");
                 resultlist1.Count().IsEqualTo(3);
 
-                var resultlist = connection.GetListPaged<User>(2, 3, "Where Name LIKE 'Person 2%'", "age desc");
+                var resultlist = connection.GetListPaged<User>(2, 3, @"Where ""Name"" LIKE 'Person 2%'", @"""Age"" desc");
                 resultlist.Count().IsEqualTo(3);
                 resultlist.Skip(1).First().Name.IsEqualTo("Person 25");
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1150,10 +1188,10 @@ namespace Dapper.SimpleCRUDTests
                     x++;
                 } while (x < 30);
 
-                connection.DeleteList<User>("Where age > 9");
+                connection.DeleteList<User>(@"Where ""Age"" > 9");
                 var resultlist = connection.GetList<User>();
                 resultlist.Count().IsEqualTo(10);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1168,10 +1206,10 @@ namespace Dapper.SimpleCRUDTests
                     x++;
                 } while (x < 10);
 
-                connection.DeleteList<User>(new { age = 9 });
+                connection.DeleteList<User>(new { Age = 9 });
                 var resultlist = connection.GetList<User>();
                 resultlist.Count().IsEqualTo(9);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1186,10 +1224,10 @@ namespace Dapper.SimpleCRUDTests
                     x++;
                 } while (x < 10);
 
-                connection.DeleteList<User>("where age >= @Age", new { Age = 9 });
+                connection.DeleteList<User>(@"where ""Age"" >= @Age", new { Age = 9 });
                 var resultlist = connection.GetList<User>();
                 resultlist.Count().IsEqualTo(8);
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1208,10 +1246,10 @@ namespace Dapper.SimpleCRUDTests
                 resultlist.Count().IsEqualTo(30);
                 connection.RecordCount<User>().IsEqualTo(30);
 
-                connection.RecordCount<User>("where age = 10 or age = 11").IsEqualTo(2);
+                connection.RecordCount<User>(@"where ""Age"" = 10 or ""Age"" = 11").IsEqualTo(2);
 
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
 
         }
@@ -1231,10 +1269,10 @@ namespace Dapper.SimpleCRUDTests
                 resultlist.Count().IsEqualTo(30);
                 connection.RecordCount<User>().IsEqualTo(30);
 
-                connection.RecordCount<User>(new { age = 10 }).IsEqualTo(1);
+                connection.RecordCount<User>(new { Age = 10 }).IsEqualTo(1);
 
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
 
         }
@@ -1252,10 +1290,10 @@ namespace Dapper.SimpleCRUDTests
 
                 var resultlist = connection.GetList<User>();
                 resultlist.Count().IsEqualTo(30);
-                connection.RecordCount<User>("where Age > 15").IsEqualTo(14);
+                connection.RecordCount<User>(@"where ""Age"" > 15").IsEqualTo(14);
 
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
 
         }
@@ -1268,7 +1306,7 @@ namespace Dapper.SimpleCRUDTests
                 id.IsEqualTo(999);
                 var user = connection.Get<UserWithoutAutoIdentity>(999);
                 user.Name.IsEqualTo("User999");
-                connection.Execute("Delete from UserWithoutAutoIdentity");
+                connection.Execute(@"Delete from ""UserWithoutAutoIdentity""");
             }
         }
 
@@ -1288,7 +1326,7 @@ namespace Dapper.SimpleCRUDTests
                 list = connection.GetList<User>(new { ScheduledDayOff = DBNull.Value });
                 list.Count().IsEqualTo(1);
 
-                connection.Execute("Delete from Users");
+                connection.Execute(@"Delete from ""Users""");
             }
         }
 
@@ -1308,7 +1346,7 @@ namespace Dapper.SimpleCRUDTests
                 item.IgnoreSelect.IsNull();
 
                 //verify the column is really there via straight dapper
-                var fromDapper = connection.Query<IgnoreColumns>("Select * from IgnoreColumns where Id = @Id", new { id = itemId }).First();
+                var fromDapper = connection.Query<IgnoreColumns>(@"select * from ""IgnoreColumns"" where ""Id"" = @Id", new { id = itemId }).First();
                 fromDapper.IgnoreSelect.IsEqualTo("OriginalSelect");
 
                 //change value and update
@@ -1319,7 +1357,7 @@ namespace Dapper.SimpleCRUDTests
                 item = connection.Get<IgnoreColumns>(itemId);
                 item.IgnoreUpdate.IsEqualTo("OriginalUpdate");
 
-                var allColumnDapper = connection.Query<IgnoreColumns>("Select IgnoreAll from IgnoreColumns where Id = @Id", new { id = itemId }).First();
+                var allColumnDapper = connection.Query<IgnoreColumns>(@"select ""IgnoreAll"" from ""IgnoreColumns"" where ""Id"" = @Id", new { id = itemId }).First();
                 allColumnDapper.IgnoreAll.IsNull();
 
                 connection.Delete<IgnoreColumns>(itemId);

@@ -28,6 +28,7 @@ namespace Dapper
 
         private static readonly ConcurrentDictionary<Type, string> TableNames = new ConcurrentDictionary<Type, string>();
         private static readonly ConcurrentDictionary<string, string> ColumnNames = new ConcurrentDictionary<string, string>();
+        private static readonly ConcurrentDictionary<Type, PropertyInfo[]> IdProperties = new ConcurrentDictionary<Type, PropertyInfo[]>();
 
         private static readonly ConcurrentDictionary<string, string> StringBuilderCacheDict = new ConcurrentDictionary<string, string>();
         private static bool StringBuilderCacheEnabled = true;
@@ -328,6 +329,182 @@ namespace Dapper
             return Insert<int?, TEntity>(connection, entityToInsert, transaction, commandTimeout);
         }
 
+        private struct Key
+        {
+            private Guid? _guid;
+            private string _string;
+            private int _int;
+            private uint _uInt;
+            private long _long;
+            private ulong _uLong;
+            private short _short;
+            private ushort _uShort;
+
+            public bool IsDefined;
+            public Type Type;
+            
+            public bool IsNumeric { get; private set; }
+            public object Value { get; private set; }
+
+            public Guid? Guid
+            {
+                get => _guid;
+                set {
+                    Value = _guid = value;
+                    IsNumeric = false;
+                }
+            }
+            
+            public string String
+            {
+                get => _string;
+                set
+                {
+                    Value = _string = value;
+                    IsNumeric = false;
+                }
+            }
+
+            public int Int
+            {
+                get => _int;
+                set { Value = _int = value; IsNumeric = true; }
+            }
+
+            public uint UInt
+            {
+                get => _uInt;
+                set { Value = _uInt = value; IsNumeric = true; }
+            }
+
+            public long Long
+            {
+                get => _long;
+                set { Value = _long = value; IsNumeric = true; }
+            }
+
+            public ulong ULong
+            {
+                get => _uLong;
+                set { Value = _uLong = value; IsNumeric = true; }
+            }
+
+            public short Short
+            {
+                get => _short;
+                set { Value = _short = value; IsNumeric = true; }
+            }
+
+            public ushort UShort
+            {
+                get => _uShort;
+                set { Value = _uShort = value; IsNumeric = true; }
+            }
+        }
+
+        private static Key GetKey<TEntity>(PropertyInfo[] idProperties, TEntity entityToInsert)
+        {
+            var keyType = idProperties[0].PropertyType;
+            Key key;
+
+            if (keyType == typeof(int))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    Int = (int) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.Int != 0;
+            }
+            else if (keyType == typeof(long))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    Long = (long) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.Long != 0;
+            }
+            else if (keyType == typeof(Guid))
+            {
+                key = new Key
+                {
+                    Type = keyType, 
+                    Guid = (Guid) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.Guid != Guid.Empty;
+            }
+            else if (keyType == typeof(string))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    String = (string) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.String != null;
+            }
+            else if (keyType == typeof(uint))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    UInt = (uint) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.UInt != 0;
+            }
+            else if (keyType == typeof(ulong))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    ULong = (ulong) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.ULong != 0;
+            }
+            else if (keyType == typeof(short))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    Short = (short) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.Short != 0;
+            }
+            else if (keyType == typeof(ushort))
+            {
+                key = new Key
+                {
+                    Type = keyType,
+                    UShort = (ushort) idProperties.First().GetValue(entityToInsert, null),
+                };
+                key.IsDefined = key.UShort != 0;
+            }
+            else
+            {
+                throw new NotSupportedException("Key type " + keyType + " not supported");
+            }
+            return key;
+        }
+
+        
+        public static TKey InsertOrUpdate<TKey, TEntity>(this IDbConnection connection, TEntity entityToInsert, IDbTransaction transaction = null, int? commandTimeout = null)
+        {
+            if (entityToInsert == null) throw new ArgumentNullException(nameof(entityToInsert));
+
+            var idProperties = GetIdProperties(typeof(TEntity));
+            var key = GetKey(idProperties, entityToInsert);
+            if (key.IsDefined)
+            {
+                var id = Insert<TKey, TEntity>(connection, entityToInsert, idProperties, key, transaction, commandTimeout);
+                idProperties.First().SetValue(entityToInsert, id);
+            }
+            else
+            {
+                Update(connection, entityToInsert, transaction, commandTimeout);
+            }
+            return (TKey)key.Value;
+        }
+
         /// <summary>
         /// <para>Inserts a row into the database, using ONLY the properties defined by TEntity</para>
         /// <para>By default inserts into the table matching the class name</para>
@@ -342,22 +519,21 @@ namespace Dapper
         /// <param name="transaction"></param>
         /// <param name="commandTimeout"></param>
         /// <returns>The ID (primary key) of the newly inserted record if it is identity using the defined type, otherwise null</returns>
-        public static TKey Insert<TKey, TEntity>(this IDbConnection connection, TEntity entityToInsert, IDbTransaction transaction = null, int? commandTimeout = null)
+        public static TKey Insert<TKey, TEntity>(this IDbConnection connection, TEntity entityToInsert,
+            IDbTransaction transaction = null, int? commandTimeout = null)
         {
-            var idProps = GetIdProperties(entityToInsert).ToList();
+            var idProps = GetIdProperties(entityToInsert);
 
-            if (!idProps.Any())
-                throw new ArgumentException("Insert<T> only supports an entity with a [Key] or Id property");
+            //var baseType = typeof(TKey);
+            //var underlyingType = Nullable.GetUnderlyingType(baseType);
+            //var keytype = underlyingType ?? baseType;
 
-            var keyHasPredefinedValue = false;
-            var baseType = typeof(TKey);
-            var underlyingType = Nullable.GetUnderlyingType(baseType);
-            var keytype = underlyingType ?? baseType;
-            if (keytype != typeof(int) && keytype != typeof(uint) && keytype != typeof(long) && keytype != typeof(ulong) && keytype != typeof(short) && keytype != typeof(ushort) && keytype != typeof(Guid) && keytype != typeof(string))
-            {
-                throw new Exception("Invalid return type");
-            }
+            var key = GetKey(idProps, entityToInsert);
+            return Insert<TKey, TEntity>(connection, entityToInsert, idProps, key, transaction, commandTimeout);
+        }
 
+        private static TKey Insert<TKey, TEntity>(this IDbConnection connection, TEntity entityToInsert, PropertyInfo[] idProps, Key key, IDbTransaction transaction = null, int? commandTimeout = null)
+        {
             var name = GetTableName(entityToInsert);
             var sb = new StringBuilder();
             sb.AppendFormat("insert into {0}", name);
@@ -369,40 +545,41 @@ namespace Dapper
             BuildInsertValues<TEntity>(sb);
             sb.Append(")");
 
-            if (keytype == typeof(Guid))
+            if (!key.IsDefined)
             {
-                var guidvalue = (Guid)idProps.First().GetValue(entityToInsert, null);
-                if (guidvalue == Guid.Empty)
+                if (key.Type == typeof(Guid))
                 {
-                    var newguid = SequentialGuid();
-                    idProps.First().SetValue(entityToInsert, newguid, null);
+                    key.Guid = SequentialGuid();
+                    idProps.First().SetValue(entityToInsert, key.Guid, null);
+                    key.IsDefined = true;
+                }
+                else if (key.IsNumeric)
+                {
+                    sb.Append(";" + _getIdentitySql);
                 }
                 else
                 {
-                    keyHasPredefinedValue = true;
+                    throw new Exception("Cannot auto-generate key type " + key.Type);
                 }
-                sb.Append(";select '" + idProps.First().GetValue(entityToInsert, null) + "' as id");
-            }
-
-            if ((keytype == typeof(int) || keytype == typeof(long)) && Convert.ToInt64(idProps.First().GetValue(entityToInsert, null)) == 0)
-            {
-                sb.Append(";" + _getIdentitySql);
-            }
-            else
-            {
-                keyHasPredefinedValue = true;
             }
 
             if (Debugger.IsAttached)
-                Trace.WriteLine(String.Format("Insert: {0}", sb));
-
-            var r = connection.Query(sb.ToString(), entityToInsert, transaction, true, commandTimeout);
-
-            if (keytype == typeof(Guid) || keyHasPredefinedValue)
             {
-                return (TKey)idProps.First().GetValue(entityToInsert, null);
+                Trace.WriteLine(String.Format("Insert: {0}", sb));
             }
-            return (TKey)r.First().id;
+
+            var result = connection.Query(sb.ToString(), entityToInsert, transaction, true, commandTimeout);
+            TKey id;
+            if (key.IsDefined)
+            {
+                id = (TKey)key.Value;
+            }
+            else
+            {
+                id = (TKey) result.First().id;
+                idProps.First().SetValue(entityToInsert, id);
+            }
+            return id;
         }
 
         /// <summary>
@@ -424,7 +601,7 @@ namespace Dapper
             var masterSb = new StringBuilder();
             StringBuilderCache(masterSb, $"{typeof(TEntity).FullName}_Update", sb =>
             {
-                var idProps = GetIdProperties(entityToUpdate).ToList();
+                var idProps = GetIdProperties(entityToUpdate);
 
                 if (!idProps.Any())
                     throw new ArgumentException("Entity must have at least one [Key] or Id property");
@@ -806,7 +983,9 @@ namespace Dapper
                         attr.GetType().Name == typeof(NotMappedAttribute).Name ||
                         attr.GetType().Name == typeof(ReadOnlyAttribute).Name && IsReadOnly(property))) continue;
 
-                    if (property.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) && property.GetCustomAttributes(true).All(attr => attr.GetType().Name != typeof(RequiredAttribute).Name) && property.PropertyType != typeof(Guid)) continue;
+                    if (property.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) 
+                        && property.GetCustomAttributes(true).All(attr => attr.GetType().Name != typeof(RequiredAttribute).Name) 
+                        && property.PropertyType != typeof(Guid)) continue;
 
                     sb.Append(GetColumnName(property));
                     if (i < props.Count() - 1)
@@ -895,18 +1074,10 @@ namespace Dapper
 
         //Get all properties that are named Id or have the Key attribute
         //For Inserts and updates we have a whole entity so this method is used
-        private static IEnumerable<PropertyInfo> GetIdProperties(object entity)
+        private static PropertyInfo[] GetIdProperties(object entity)
         {
             var type = entity.GetType();
             return GetIdProperties(type);
-        }
-
-        //Get all properties that are named Id or have the Key attribute
-        //For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
-        private static IEnumerable<PropertyInfo> GetIdProperties(Type type)
-        {
-            var tp = type.GetProperties().Where(p => p.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(KeyAttribute).Name)).ToList();
-            return tp.Any() ? tp : type.GetProperties().Where(p => p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase));
         }
 
         //Gets the table name for this entity
@@ -916,6 +1087,37 @@ namespace Dapper
         {
             var type = entity.GetType();
             return GetTableName(type);
+        }
+
+        //Get all properties that are named Id or have the Key attribute
+        //For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
+        private static PropertyInfo[] GetIdProperties(Type type)
+        {
+            if (IdProperties.TryGetValue(type, out var idProperties))
+                return idProperties;
+
+            PropertyInfo idPropertyInfo = null;
+            var keyProperties = new List<PropertyInfo>();
+            foreach (var prop in type.GetProperties())
+            {
+                if (prop.Name.ToLowerInvariant() == "id")
+                {
+                    idPropertyInfo = prop;
+                }
+                if (Attribute.IsDefined(prop, typeof(KeyAttribute)))
+                {
+                    keyProperties.Add(prop);
+                }
+            }
+            if (idPropertyInfo == null && keyProperties.Count == 0)
+            {
+                throw new Exception($"Cannot find a primary key for type {type.Name}, please use [Key] attribute!");
+            }
+            if (keyProperties.Count == 0) keyProperties.Add(idPropertyInfo);
+
+            idProperties = keyProperties.ToArray();
+            IdProperties.AddOrUpdate(type, idProperties, (t, v) => idProperties);
+            return idProperties;
         }
 
         //Gets the table name for this type

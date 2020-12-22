@@ -238,6 +238,34 @@ and p.""ModeratorId"" = u2.""Id""", (p, u, u2) =>
             }
         }
 
+        public void TestMultiMappingUsingMultiQuery()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                var user = connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = connection.Insert(new User {Name = "Sally", Age = 30});
+                var post = connection.Insert(new Post
+                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                var post2 = connection.Insert(new Post
+                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+
+                var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+order by p.""Id"" desc", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new { Id = 0 });
+
+                connection.Execute(@"Delete from ""Users""");
+                connection.Execute(@"Delete from ""Posts""");
+            }
+        }
+
         //basic tests
         public void TestInsertWithSpecifiedTableName()
         {

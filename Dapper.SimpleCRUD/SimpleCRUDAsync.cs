@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -295,7 +296,7 @@ namespace Dapper
             var r = await connection.QueryAsync(sb.ToString(), entityToInsert, transaction, commandTimeout);
             return (TKey)r.First().id;
         }
-        
+
         /// <summary>
         ///  <para>Updates a record or records in the database asynchronously</para>
         ///  <para>By default updates records in the table matching the class name</para>
@@ -310,13 +311,21 @@ namespace Dapper
         /// <param name="transaction"></param>
         /// <param name="commandTimeout"></param>
         /// <returns>The number of affected records</returns>
-        public static Task<int> UpdateAsync<TEntity>(this IDbConnection connection, TEntity entityToUpdate, IDbTransaction transaction = null, int? commandTimeout = null, System.Threading.CancellationToken? token = null)
+        public static Task<int> UpdateAsync<TEntity>(this IDbConnection connection, TEntity entityToUpdate,
+            IDbTransaction transaction = null, int? commandTimeout = null,
+            System.Threading.CancellationToken? token = null)
         {
-            var idProps = GetIdProperties(entityToUpdate).ToList();
+            var idProps = GetIdProperties(entityToUpdate);
 
             if (!idProps.Any())
                 throw new ArgumentException("Entity must have at least one [Key] or Id property");
 
+            return UpdateAsync<TEntity>(connection, entityToUpdate, idProps, transaction, commandTimeout, token);
+        }
+        public static Task<int> UpdateAsync<TEntity>(this IDbConnection connection, TEntity entityToUpdate, PropertyInfo[] idProps,
+            IDbTransaction transaction = null, int? commandTimeout = null,
+            System.Threading.CancellationToken? token = null)
+        {
             var name = GetTableName(entityToUpdate);
 
             var sb = new StringBuilder();
@@ -349,7 +358,7 @@ namespace Dapper
         /// <returns>The number of records affected</returns>
         public static Task<int> DeleteAsync<T>(this IDbConnection connection, T entityToDelete, IDbTransaction transaction = null, int? commandTimeout = null)
         {
-            var idProps = GetIdProperties(entityToDelete).ToList();
+            var idProps = GetIdProperties(entityToDelete);
 
             if (!idProps.Any())
                 throw new ArgumentException("Entity must have at least one [Key] or Id property");

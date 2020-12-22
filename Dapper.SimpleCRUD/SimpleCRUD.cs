@@ -136,7 +136,7 @@ namespace Dapper
         public static T Get<T>(this IDbConnection connection, object id, IDbTransaction transaction = null, int? commandTimeout = null)
         {
             var currenttype = typeof(T);
-            var idProps = GetIdProperties(currenttype).ToList();
+            var idProps = GetIdProperties(currenttype);
 
             if (!idProps.Any())
                 throw new ArgumentException("Get<T> only supports an entity with a [Key] or Id property");
@@ -148,7 +148,7 @@ namespace Dapper
             BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
             sb.AppendFormat(" from {0} where ", name);
 
-            for (var i = 0; i < idProps.Count; i++)
+            for (var i = 0; i < idProps.Length; i++)
             {
                 if (i > 0)
                     sb.Append(" and ");
@@ -156,7 +156,7 @@ namespace Dapper
             }
 
             var dynParms = new DynamicParameters();
-            if (idProps.Count == 1)
+            if (idProps.Length == 1)
                 dynParms.Add("@" + idProps.First().Name, id);
             else
             {
@@ -282,7 +282,7 @@ namespace Dapper
                 throw new Exception("Page must be greater than 0");
 
             var currenttype = typeof(T);
-            var idProps = GetIdProperties(currenttype).ToList();
+            var idProps = GetIdProperties(currenttype);
             if (!idProps.Any())
                 throw new ArgumentException("Entity must have at least one [Key] property");
 
@@ -500,9 +500,127 @@ namespace Dapper
             }
             else
             {
-                Update(connection, entityToInsert, transaction, commandTimeout);
+                Update(connection, entityToInsert, idProperties, transaction, commandTimeout);
             }
             return (TKey)key.Value;
+        }
+
+        private const string DefaultMultiQueryDelimiter = "|||";
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TThird, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TThird, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TThird, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TThird, TFourth, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TThird, TFourth, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TThird, TFourth, TFifth, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        public static IEnumerable<TReturn> MultiQuery<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(
+            this IDbConnection cnn,
+            string sql,
+            Func<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn> map,
+            object param = null,
+            IDbTransaction transaction = null,
+            bool buffered = true,
+            string delimiter = DefaultMultiQueryDelimiter,
+            int? commandTimeout = null,
+            CommandType? commandType = null)
+        {
+            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(sql2, map, param, transaction,
+                buffered, splitOn, commandTimeout, commandType);
+        }
+
+        private static void GetSplittableSql(string sql, string delimiter, out string splittableSql,
+            out string splitOn)
+        {
+            int i = 0, j;
+            var sb = new StringBuilder();
+            var sb2 = new StringBuilder();
+
+            while ((j = sql.IndexOf(delimiter, i, StringComparison.Ordinal)) >= 0)
+            {
+                sb.Append(sql.Substring(i, j - i));
+                sb.AppendFormat(", 1 as " + _encapsulation + ",", "_split");
+                i = j + delimiter.Length;
+                if (sb2.Length > 0) sb2.Append(',');
+                sb2.Append("_split");
+            }
+            sb.Append(sql.Substring(i));
+            splittableSql = sb.ToString();
+            splitOn = sb2.ToString();
         }
 
         /// <summary>
@@ -596,16 +714,23 @@ namespace Dapper
         /// <param name="transaction"></param>
         /// <param name="commandTimeout"></param>
         /// <returns>The number of affected records</returns>
-        public static int Update<TEntity>(this IDbConnection connection, TEntity entityToUpdate, IDbTransaction transaction = null, int? commandTimeout = null)
+        public static int Update<TEntity>(this IDbConnection connection, TEntity entityToUpdate,
+            IDbTransaction transaction = null, int? commandTimeout = null)
         {
+
+            var idProps = GetIdProperties(entityToUpdate);
+            if (!idProps.Any())
+                throw new ArgumentException("Entity must have at least one [Key] or Id property");
+
+            return Update<TEntity>(connection, entityToUpdate, idProps, transaction, commandTimeout);
+        }
+
+        private static int Update<TEntity>(this IDbConnection connection, TEntity entityToUpdate, PropertyInfo[] idProps,
+            IDbTransaction transaction = null, int? commandTimeout = null) {
+
             var masterSb = new StringBuilder();
             StringBuilderCache(masterSb, $"{typeof(TEntity).FullName}_Update", sb =>
             {
-                var idProps = GetIdProperties(entityToUpdate);
-
-                if (!idProps.Any())
-                    throw new ArgumentException("Entity must have at least one [Key] or Id property");
-
                 var name = GetTableName(entityToUpdate);
 
                 sb.AppendFormat("update {0}", name);
@@ -640,7 +765,7 @@ namespace Dapper
             StringBuilderCache(masterSb, $"{typeof(T).FullName}_Delete", sb =>
             {
 
-                var idProps = GetIdProperties(entityToDelete).ToList();
+                var idProps = GetIdProperties(entityToDelete);
 
                 if (!idProps.Any())
                     throw new ArgumentException("Entity must have at least one [Key] or Id property");
@@ -675,9 +800,7 @@ namespace Dapper
         public static int Delete<T>(this IDbConnection connection, object id, IDbTransaction transaction = null, int? commandTimeout = null)
         {
             var currenttype = typeof(T);
-            var idProps = GetIdProperties(currenttype).ToList();
-
-
+            var idProps = GetIdProperties(currenttype);
             if (!idProps.Any())
                 throw new ArgumentException("Delete<T> only supports an entity with a [Key] or Id property");
 
@@ -686,7 +809,7 @@ namespace Dapper
             var sb = new StringBuilder();
             sb.AppendFormat("Delete from {0} where ", name);
 
-            for (var i = 0; i < idProps.Count; i++)
+            for (var i = 0; i < idProps.Length; i++)
             {
                 if (i > 0)
                     sb.Append(" and ");
@@ -694,7 +817,7 @@ namespace Dapper
             }
 
             var dynParms = new DynamicParameters();
-            if (idProps.Count == 1)
+            if (idProps.Length == 1)
                 dynParms.Add("@" + idProps.First().Name, id);
             else
             {
@@ -870,11 +993,11 @@ namespace Dapper
         {
             StringBuilderCache(masterSb, $"{props.CacheKey()}_BuildSelect", sb =>
             {
-                var propertyInfos = props as IList<PropertyInfo> ?? props.ToList();
+                var propertyInfos = props as PropertyInfo[] ?? props.ToArray();
                 var addedAny = false;
-                for (var i = 0; i < propertyInfos.Count(); i++)
+                for (var i = 0; i < propertyInfos.Length; i++)
                 {
-                    var property = propertyInfos.ElementAt(i);
+                    var property = propertyInfos[i];
 
                     if (property.GetCustomAttributes(true).Any(attr => attr.GetType().Name == typeof(IgnoreSelectAttribute).Name || attr.GetType().Name == typeof(NotMappedAttribute).Name)) continue;
 
@@ -889,9 +1012,9 @@ namespace Dapper
             });
         }
 
-        private static void BuildWhere<TEntity>(StringBuilder sb, IEnumerable<PropertyInfo> idProps, object whereConditions = null)
+        private static void BuildWhere<TEntity>(StringBuilder sb, PropertyInfo[] idProps, object whereConditions = null)
         {
-            var propertyInfos = idProps.ToArray();
+            var propertyInfos = idProps;
             for (var i = 0; i < propertyInfos.Count(); i++)
             {
                 var useIsNull = false;

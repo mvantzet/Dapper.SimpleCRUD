@@ -187,7 +187,6 @@ namespace Dapper.SimpleCRUDTests
 
         private IDbConnection GetOpenConnection()
         {
-
             IDbConnection connection;
             if (_dbtype == SimpleCRUD.Dialect.PostgreSQL)
             {
@@ -218,8 +217,8 @@ namespace Dapper.SimpleCRUDTests
         {
             using (var connection = GetOpenConnection())
             {
-                var user = connection.Insert(new User {Name = "Harry", Age = 30});
-                var user2 = connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = (int?)connection.Insert(new User {Name = "Sally", Age = 30});
                 var post = connection.Insert(new Post {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value });
                 var post2 = connection.Insert(new Post {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value });
 
@@ -242,8 +241,8 @@ and p.""ModeratorId"" = u2.""Id""", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = connection.Insert(new User {Name = "Harry", Age = 30});
-                var user2 = connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = (int?)connection.Insert(new User {Name = "Sally", Age = 30});
                 var post = connection.Insert(new Post
                     {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
                 var post2 = connection.Insert(new Post
@@ -550,8 +549,11 @@ order by p.""Id"" desc", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var id = connection.Insert(new Car { Make = "Honda", Model = "Civic" });
-                id.IsEqualTo(1);
+                var car = new Car {Make = "Honda", Model = "Civic"};
+                var id = (int)connection.Insert(car);
+                Assert.IsTrue(id > 0);
+                Assert.IsTrue(id == car.CarId);
+                Assert.IsTrue(car.Id == null);
             }
         }
 
@@ -587,7 +589,7 @@ order by p.""Id"" desc", (p, u, u2) =>
             {
                 //arrange
                 var user = new User { Name = "User1", Age = 10, ScheduledDayOff = DayOfWeek.Friday };
-                user.Id = connection.Insert(user) ?? 0;
+                user.Id = connection.Insert<int?,User>(user) ?? 0;
 
                 user.ScheduledDayOff = DayOfWeek.Thursday;
                 var userAsEditableSettings = (UserEditableSettings)user;
@@ -1043,7 +1045,8 @@ order by p.""Id"" desc", (p, u, u2) =>
             {
                 //arrange
                 var user = new User { Name = "User1", Age = 10, ScheduledDayOff = DayOfWeek.Friday };
-                user.Id = connection.Insert(user) ?? 0;
+                var id = connection.Insert<int?,User>(user) ?? 0;
+                Assert.IsEqualTo(id, user.Id);
 
                 user.ScheduledDayOff = DayOfWeek.Thursday;
                 var userAsEditableSettings = (UserEditableSettings)user;

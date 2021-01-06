@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using JetBrains.Annotations;
 using Microsoft.CSharp.RuntimeBinder;
 
@@ -543,7 +544,7 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
@@ -559,7 +560,7 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TThird, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
@@ -575,7 +576,7 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TThird, TFourth, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
@@ -591,7 +592,7 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
@@ -607,7 +608,7 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
@@ -623,18 +624,20 @@ namespace Dapper
             int? commandTimeout = null,
             CommandType? commandType = null)
         {
-            GetSplittableSql(sql, delimiter, out var sql2, out var splitOn);
+            GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
             return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(sql2, map, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
-        private static void GetSplittableSql(string sql, string delimiter, out string splittableSql,
+        private static void GetSplittableSql(string sql, object param, string delimiter, out string splittableSql,
             out string splitOn)
         {
+            sql = TemplateEngine.Evaluate(sql, param);
+
             int i = 0, j;
             var sb = new StringBuilder();
             var sb2 = new StringBuilder();
-
+            
             while ((j = sql.IndexOf(delimiter, i, StringComparison.Ordinal)) >= 0)
             {
                 sb.Append(sql.Substring(i, j - i));
@@ -1626,6 +1629,144 @@ namespace Dapper
             public override EnumString<T> Parse(object value)
             {
                 return new EnumString<T>((string)value);
+            }
+        }
+
+        public static class TemplateEngine
+        {
+            private static readonly Regex OptionalPartRegex = new Regex(@"(?<!@)@(?'Name'[a-z][a-z0-9_]*)\?\{", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            private static readonly Regex InsertRegex = new Regex(@"@@(?'Name'[a-z][a-z0-9_]*)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+            public static string Evaluate(string sql, dynamic parameters)
+            {
+                var sb = new StringBuilder();
+                var searchFrom = 0;
+                Match m;
+                Dictionary<string, object> parameterLookup = null; // Lazy initialization
+
+                // First pass: fill in @Param?{ ... }
+                while ((m = OptionalPartRegex.Match(sql, searchFrom)).Success)
+                {
+                    // Find closing brace after "@Param?{"
+                    var start = m.Index + m.Length;
+                    if (!TryFindClosingBrace(sql, start, out int end, out string innerText))
+                    {
+                        throw new FormatException("Could not find closing brace for expression at index " + m.Index);
+                    }
+
+                    // If we did not initialize the parameter lookup yet, do it here
+                    if (parameterLookup == null)
+                    {
+                        parameterLookup = GetParameterLookup(parameters);
+                    }
+
+                    // Add everything up to where we found the opening "?@Prop{"
+                    sb.Append(sql.Substring(searchFrom, m.Index - searchFrom));
+
+                    bool includeInnerText;
+                    var parameterName = m.Groups["Name"].Value;
+                    if (!parameterLookup.TryGetValue(parameterName, out object val) || val == null)
+                    {
+                        // There is no property with the extracted name, or it is null, do not include
+                        includeInnerText = false;
+                    }
+                    else if (val is bool b)
+                    {
+                        includeInnerText = b;
+                    }
+                    else
+                    {
+                        includeInnerText = true;
+                    }
+
+                    if (includeInnerText)
+                    {
+                        sb.Append(innerText);
+                    }
+
+                    // Resume search after "}"
+                    searchFrom = end + 1;
+                }
+
+                if (searchFrom > 0)
+                {
+                    sb.Append(sql.Substring(searchFrom));
+                    sql = sb.ToString();
+                }
+
+                // Second pass: fill in @@Name 
+                sb.Clear();
+                searchFrom = 0;
+                while ((m = InsertRegex.Match(sql, searchFrom)).Success)
+                {
+                    // Add everything up to where we found the opening "@@Prop"
+                    sb.Append(sql.Substring(searchFrom, m.Index - searchFrom));
+
+                    // If we did not initialize the parameter lookup yet, do it here
+                    if (parameterLookup == null)
+                    {
+                        parameterLookup = GetParameterLookup(parameters);
+                    }
+                    var parameterName = m.Groups["Name"].Value;
+                    sb.Append(parameterLookup.TryGetValue(parameterName, out var val) ? val : "");
+
+                    // Resume search after match 
+                    searchFrom = m.Index + m.Length;
+                }
+
+                if (searchFrom > 0)
+                {
+                    sb.Append(sql.Substring(searchFrom));
+                    sql = sb.ToString();
+                }
+
+                return sql;
+            }
+
+            private static Dictionary<string, object> GetParameterLookup(dynamic parameters)
+            {
+                Dictionary<string, object> parameterLookup;
+                PropertyInfo[] props =
+                    parameters == null
+                        ? Array.Empty<PropertyInfo>()
+                        : (PropertyInfo[]) parameters
+                            .GetType()
+                            .GetProperties(BindingFlags.Instance | BindingFlags.Public);
+                parameterLookup = props.ToDictionary(p => p.Name, p => p.GetValue(parameters));
+                return parameterLookup;
+            }
+
+            private static bool TryFindClosingBrace(string sql, int start, out int index, out string innerText)
+            {
+                bool escape = false;
+                // Set j to the start of the inner text, after "?@Prop{".
+                // Set i to the same position and increase it until we find the closing "}"
+                index = start;
+                StringBuilder innerTextBuilder = new StringBuilder();
+                while (index < sql.Length)
+                {
+                    var c = sql[index];
+                    if (c == '\\')
+                    {
+                        escape = true;
+                    }
+                    else
+                    {
+                        if (c == '}' && !escape)
+                        {
+                            innerText = innerTextBuilder.ToString();
+                            return true;
+                        }
+
+                        innerTextBuilder.Append(c);
+                        escape = false;
+                    }
+
+                    index++;
+                }
+
+                innerText = null;
+                return false;
             }
         }
     }

@@ -251,8 +251,8 @@ and p.""ModeratorId"" = u2.""Id""", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30});
-                var user2 = (int?)connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
                 var post = connection.Insert(new Post
                     {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
                 var post2 = connection.Insert(new Post
@@ -268,7 +268,127 @@ order by p.""Id"" desc", (p, u, u2) =>
                     p.User = u;
                     p.Moderator = u2;
                     return p;
-                }, new { Id = 0 });
+                }, new {Id = 0});
+
+                connection.Execute(@"Delete from ""Users""");
+                connection.Execute(@"Delete from ""Posts""");
+            }
+        }
+
+        public void TestOptionalQueryParts_UseBooleanFlag()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday });
+                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var post = connection.Insert(new Post
+                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                var post2 = connection.Insert(new Post
+                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+
+                var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+@FilterByDayOff?{ and u.""ScheduledDayOff"" = @ScheduledDayOff }
+order by p.""Id"" desc", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new {Id = 0, ScheduledDayOff = DayOfWeek.Monday.ToString(), FilterByDayOff = false });
+
+                Assert.IsTrue(posts.Any());
+
+                var posts2 = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+@FilterByDayOff?{ and u.""ScheduledDayOff"" = @ScheduledDayOff }
+order by p.""Id"" desc", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new {Id = 0, ScheduledDayOff = DayOfWeek.Monday.ToString(), FilterByDayOff = true });
+
+                Assert.IsFalse(posts2.Any());
+
+                connection.Execute(@"Delete from ""Users""");
+                connection.Execute(@"Delete from ""Posts""");
+            }
+        }
+
+        public void TestOptionalQueryParts_UseValueItself()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday});
+                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var post = connection.Insert(new Post
+                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                var post2 = connection.Insert(new Post
+                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+
+                var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+@ScheduledDayOff?{ and u.""ScheduledDayOff"" = @ScheduledDayOff }
+order by p.""Id"" desc", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new {Id = 0, ScheduledDayOff = DayOfWeek.Friday.ToString() });
+                Assert.IsTrue(posts.Any());
+
+                var posts2 = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+@ScheduledDayOff?{ and u.""ScheduledDayOff"" = @ScheduledDayOff }
+order by p.""Id"" desc", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new {Id = 0, ScheduledDayOff = DayOfWeek.Monday.ToString() });
+                Assert.IsFalse(posts2.Any());
+
+                connection.Execute(@"Delete from ""Users""");
+                connection.Execute(@"Delete from ""Posts""");
+            }
+        }
+
+        public void TestOptionalQueryParts_UseValueItselfWithNullValue()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30});
+                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var post = connection.Insert(new Post
+                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                var post2 = connection.Insert(new Post
+                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+
+                var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
+from ""Posts"" p,""Users"" u, ""Users"" u2
+where p.""UserId"" = u.""Id"" 
+and p.""ModeratorId"" = u2.""Id""
+and p.""Id"" > @Id
+@ScheduledDayOff?{ and u.""ScheduledDayOff"" = @ScheduledDayOff }
+@OrderBy?{order by @@OrderBy}", (p, u, u2) =>
+                {
+                    p.User = u;
+                    p.Moderator = u2;
+                    return p;
+                }, new {Id = 0, ScheduledDayOff = (string)null, OrderBy = @"p.""Id"" desc" });
+                Assert.IsTrue(posts.Any());
 
                 connection.Execute(@"Delete from ""Users""");
                 connection.Execute(@"Delete from ""Posts""");

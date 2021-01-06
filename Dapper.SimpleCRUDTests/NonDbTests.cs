@@ -37,5 +37,78 @@ namespace Dapper.SimpleCRUDTests
             expected.Length.IsEqualTo(props.Length);
             expected.All(e => props.Any(p => p.Name == e)).IsTrue();
         }
+
+        public void TemplateEngineTest_ExistingProp()
+        {
+            var sql = "a @test?{something} b";
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = false});
+            Assert.IsEqualTo(sql2, "a  b");
+
+            var sql3 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = true});
+            Assert.IsEqualTo(sql3, "a something b");
+        }
+
+        public void TemplateEngineTest_NonExistentProp()
+        {
+            var sql = "a @test?{something} b";
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, null);
+            Assert.IsEqualTo(sql2, "a  b");
+        }
+
+        public void TemplateEngineTest_StringProp()
+        {
+            var sql = "@test?{x = @test}";
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = "OK"});
+            Assert.IsEqualTo(sql2, "x = @test");
+
+            var sql3 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = ""});
+            Assert.IsEqualTo(sql3, "x = @test");
+
+            var sql4 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = (string)null});
+            Assert.IsEqualTo(sql4, "");
+        }
+
+        public void TemplateEngineTest_EscapeChar()
+        {
+            var sql = @"@test?{char > '\}'}";
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, new {test = true});
+            Assert.IsEqualTo(sql2, @"char > '}'");
+        }
+
+        public void TemplateEngineTest_EmptyString()
+        {
+            var sql = @"";
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, null);
+            Assert.IsEqualTo(sql2, @"");
+        }
+
+        public void TemplateEngineTest_LiteralInserts()
+        {
+            var sql = @"select * from user @OrderBy?{order by @@OrderBy}";
+
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(sql, null);
+            Assert.IsEqualTo(sql2, @"select * from user ");
+
+            var sql3 = SimpleCRUD.TemplateEngine.Evaluate(sql, new
+            {
+                OrderBy = "id desc"
+            });
+            Assert.IsEqualTo(sql3, @"select * from user order by id desc");
+
+            var sql4 = SimpleCRUD.TemplateEngine.Evaluate(@"select * from user order by @@OrderBy",
+                new {OrderBy = "id desc"});
+            Assert.IsEqualTo(sql4, @"select * from user order by id desc");
+        }
+
+        public void TemplateEngineTest_WhereAndOrderBy() {
+            var sql = SimpleCRUD.TemplateEngine.Evaluate(@"select * from user where id > 10 @Where?{and @@Where} @OrderBy?{order by @@OrderBy}",
+                new
+                {
+                    Where = "firstname like @FirstName || '%'", 
+                    FirstName = "A",
+                    OrderBy = "lastname, firstname"
+                });
+            Assert.IsEqualTo(sql, @"select * from user where id > 10 and firstname like @FirstName || '%' order by lastname, firstname");
+        }
     }
 }

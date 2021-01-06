@@ -49,6 +49,15 @@ namespace Dapper.SimpleCRUDTests
             }
         }
 
+        public static void IsNotNull(object obj)
+        {
+            if (obj == null)
+            {
+                throw new ApplicationException("Expected not null");
+            }
+        }
+
+
         public static void Throws<T>(Action a) where T : Exception
         {
             try

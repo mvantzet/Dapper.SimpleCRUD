@@ -3,6 +3,7 @@ using System.Data.SqlClient;
 using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using MySql.Data.MySqlClient;
@@ -12,6 +13,11 @@ namespace Dapper.SimpleCRUDTests
 {
     class Program
     {
+        private const bool RunPostgreSQLTests = true;
+        private const bool RunSqLiteTests = false;
+        private const bool RunMySQLTests = false;
+        private const bool RunSQLServerTests = false;
+
         public static readonly string PostgreSQLConnectionString = string.Format(
             "Server={0};Port={1};User Id={2};Password={3};Database={4};", 
             "localhost", "5432", "postgres", "postgrespass", "testdb");
@@ -25,25 +31,42 @@ namespace Dapper.SimpleCRUDTests
 
         static void Main()
         {
-            //Setup();
-            //RunTests();
+            // Don't warn about unused code
+#pragma warning disable CS0162
+            if (RunSQLServerTests)
+            {
+                SetupSqlServer();
+                RunTestsSqlServer();
+            }
 
-            SetupSqLite();
-            RunTestsSqLite();
+            if (RunSqLiteTests)
+            {
+                SetupSqLite();
+                RunTestsSqLite();
+            }
 
-            //PostgreSQL tests assume port 5432 with username postgres and password postgrespass
-            //they are commented out by default since postgres setup is required to run tests
-            SetupPg(); 
-            RunTestsPg();
+            if (RunPostgreSQLTests)
+            {
+                SetupPostgreSQL();
+                RunTestsPostgreSQL();
+            }
+
+            if (RunMySQLTests)
+            {
+                SetupMySQL();
+                RunTestsMySQL();
+            }
+#pragma warning restore CS0162
+
+            // Run twice to test cache
+            // RunTestsPg();
+
+            RunNonDbTests();
 
             Console.ReadKey();
-            //MySQL tests assume port 3306 with username admin and password admin
-            //they are commented out by default since mysql setup is required to run tests
-            //SetupMySQL();
-            //RunTestsMySQL();
         }
 
-        private static void Setup()
+        private static void SetupSqlServer()
         {
             using (var connection = new SqlConnection(SqlConnectionString.Replace("testdb", "Master")))
             {
@@ -80,7 +103,7 @@ namespace Dapper.SimpleCRUDTests
             Console.WriteLine("Created database");
         }
 
-        private static void SetupPg()
+        private static void SetupPostgreSQL()
         {
             using (var connection = new NpgsqlConnection(PostgreSQLConnectionString.Replace("testdb", "postgres")))
             {
@@ -160,21 +183,44 @@ namespace Dapper.SimpleCRUDTests
                 connection.Execute(@" create table IgnoreColumns (Id INTEGER PRIMARY KEY AUTO_INCREMENT, IgnoreInsert nvarchar(100) null, IgnoreUpdate nvarchar(100) null, IgnoreSelect nvarchar(100)  null, IgnoreAll nvarchar(100) null) ");
                 connection.Execute(@" CREATE table KeyMaster (Key1 INTEGER NOT NULL, Key2 INTEGER NOT NULL, CONSTRAINT PK_KeyMaster PRIMARY KEY CLUSTERED (Key1 ASC, Key2 ASC))");
             }
-
         }
 
-        private static void RunTests()
+        private static void RunTests(SimpleCRUD.Dialect dialect, params string[] excludeTestsContaining)
         {
-            var stopwatch = Stopwatch.StartNew();
-            var sqltester = new Tests(SimpleCRUD.Dialect.SQLServer);
+            var tester = new Tests(dialect);
             foreach (var method in typeof(Tests).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
-                var testwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name + " in sql server");
-                method.Invoke(sqltester, null);
-                testwatch.Stop();
-                Console.WriteLine(" - OK! {0}ms", testwatch.ElapsedMilliseconds);
+                //skip schema tests
+                if (excludeTestsContaining.Any(t => method.Name.Contains(t))) continue;
+                var stopwatch = Stopwatch.StartNew();
+                Console.Write("Running " + method.Name + " in " + dialect);
+                method.Invoke(tester, null);
+                Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
             }
+        }
+
+        private static void RunNonDbTests()
+        {
+            var stopwatch2 = Stopwatch.StartNew();
+            var tester = new NonDbTests();
+            foreach (var method in tester.GetType()
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            {
+                //skip schema tests
+                var stopwatch = Stopwatch.StartNew();
+                Console.Write("Running " + method.Name);
+                method.Invoke(tester, null);
+                stopwatch.Stop();
+                Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
+            }
+            stopwatch2.Stop();
+            Console.WriteLine("Time elapsed: {0}", stopwatch2.Elapsed);
+        }
+
+        private static void RunTestsSqlServer()
+        {
+            var stopwatch = Stopwatch.StartNew();
+            RunTests(SimpleCRUD.Dialect.SQLServer);
             stopwatch.Stop();
 
             // Write result
@@ -194,37 +240,19 @@ namespace Dapper.SimpleCRUDTests
             Console.Write("SQL Server testing complete.");
         }
 
-        private static void RunTestsPg()
+        private static void RunTestsPostgreSQL()
         {
             var stopwatch = Stopwatch.StartNew();
-            var pgtester = new Tests(SimpleCRUD.Dialect.PostgreSQL);
-            foreach (var method in typeof(Tests).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-            {
-                //if (!method.Name.Contains("MultiMapping")) continue;
-                var testwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name + " in PostgreSQL");
-                method.Invoke(pgtester, null);
-                Console.WriteLine(" - OK! {0}ms", testwatch.ElapsedMilliseconds);
-            }
+            RunTests(SimpleCRUD.Dialect.PostgreSQL);
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
-
             Console.Write("PostgreSQL testing complete.");
         }
 
         private static void RunTestsSqLite()
         {
             var stopwatch = Stopwatch.StartNew();
-            var pgtester = new Tests(SimpleCRUD.Dialect.SQLite);
-            foreach (var method in typeof(Tests).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-            {
-                //skip schema tests
-                if (method.Name.Contains("Schema")) continue;
-                var testwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name + " in SQLite");
-                method.Invoke(pgtester, null);
-                Console.WriteLine(" - OK! {0}ms", testwatch.ElapsedMilliseconds);
-            }
+            RunTests(SimpleCRUD.Dialect.SQLite, "Schema");
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
             Console.Write("SQLite testing complete.");
@@ -233,20 +261,7 @@ namespace Dapper.SimpleCRUDTests
         private static void RunTestsMySQL()
         {
             var stopwatch = Stopwatch.StartNew();
-            var mysqltester = new Tests(SimpleCRUD.Dialect.MySQL);
-            foreach (var method in typeof(Tests).GetMethods(BindingFlags.Public | BindingFlags.Instance |
-                                                            BindingFlags.DeclaredOnly))
-            {
-                //skip schema tests
-                if (method.Name.Contains("Schema")) continue;
-                if (method.Name.Contains("Guid")) continue;
-
-                var testwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name + " in MySQL");
-                method.Invoke(mysqltester, null);
-                Console.WriteLine(" - OK! {0}ms", testwatch.ElapsedMilliseconds);
-            }
-
+            RunTests(SimpleCRUD.Dialect.MySQL, "Schema", "Guid");
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
 

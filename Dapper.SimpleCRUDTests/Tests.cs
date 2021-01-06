@@ -213,6 +213,16 @@ namespace Dapper.SimpleCRUDTests
             return connection;
         }
 
+        public void RegressionTest_NotMappedInt()
+        {
+            using (var connection = GetOpenConnection())
+            {
+                Assert.Throws<ArgumentOutOfRangeException>(() => 
+                    connection.GetList<User>(new {NotMappedInt = 2})
+                );
+            }
+        }
+
         public void TestMultiMapping()
         {
             using (var connection = GetOpenConnection())

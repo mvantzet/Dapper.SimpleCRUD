@@ -49,5 +49,21 @@ namespace Dapper.SimpleCRUDTests
             }
         }
 
+        public static void Throws<T>(Action a) where T : Exception
+        {
+            try
+            {
+                a();
+                throw new ApplicationException($"Expected exception type '{typeof(T).Name}'");
+            }
+            catch (Exception e)
+            {
+                if (e is T)
+                {
+                    return;
+                }
+                throw new ApplicationException($"Expected exception type '{typeof(T).Name}' but was '{e.GetType().Name}'");
+            }
+        }
     }
 }

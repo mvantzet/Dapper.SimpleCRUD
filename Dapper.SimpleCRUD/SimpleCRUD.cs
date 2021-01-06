@@ -37,6 +37,7 @@ namespace Dapper
 
         private static ITableNameResolver _tableNameResolver = new TableNameResolver();
         private static IColumnNameResolver _columnNameResolver = new ColumnNameResolver();
+        private static ISequentialGuidGenerator _sequentialGuidGenerator = new SequentialGuidGenerator();
 
         /// <summary>
         /// Append a Cached version of a strinbBuilderAction result based on a cacheKey
@@ -124,6 +125,15 @@ namespace Dapper
         }
 
         /// <summary>
+        /// Sets the sequential GUID generator
+        /// </summary>
+        /// <param name="generator">The generator to use for generating a new sequential GUID</param>
+        public static void SetSequentialGuidGenerator([NotNull] ISequentialGuidGenerator generator)
+        {
+            _sequentialGuidGenerator = generator ?? throw new ArgumentNullException(nameof(generator));
+        }
+
+        /// <summary>
         /// <para>By default queries the table matching the class name</para>
         /// <para>-Table name can be overridden by adding an attribute on your class [Table("YourTableName")]</para>
         /// <para>By default filters on the Id column</para>
@@ -152,7 +162,7 @@ namespace Dapper
             var sb = new StringBuilder();
             sb.Append("Select ");
             //create a new empty instance of the type to get the base properties
-            BuildSelect(sb, GetScaffoldableProperties<T>());
+            BuildSelect(sb, GetScaffoldableProperties(currenttype));
             sb.AppendFormat(" from {0} where ", name);
 
             for (var i = 0; i < idProps.Length; i++)
@@ -199,7 +209,7 @@ namespace Dapper
             var whereprops = GetAllProperties(whereConditions).ToArray();
             sb.Append("Select ");
             //create a new empty instance of the type to get the base properties
-            BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
+            BuildSelect(sb, GetScaffoldableProperties(currenttype).ToArray());
             sb.AppendFormat(" from {0}", name);
 
             if (whereprops.Any())
@@ -237,7 +247,7 @@ namespace Dapper
             var sb = new StringBuilder();
             sb.Append("SELECT ");
 
-            BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
+            BuildSelect(sb, GetScaffoldableProperties(currenttype).ToArray());
 
             sb.AppendFormat(" FROM {0}", name);
 
@@ -305,7 +315,7 @@ namespace Dapper
             }
 
             //create a new empty instance of the type to get the base properties
-            BuildSelect(sb, GetScaffoldableProperties<T>().ToArray());
+            BuildSelect(sb, GetScaffoldableProperties(currenttype).ToArray());
             query = query.Replace("{SelectColumns}", sb.ToString());
             query = query.Replace("{TableName}", name);
             query = query.Replace("{PageNumber}", pageNumber.ToString());
@@ -1022,7 +1032,7 @@ namespace Dapper
         {
             StringBuilderCache(masterSb, $"{typeof(T).FullName}_BuildUpdateSet", sb =>
             {
-                var nonIdProps = GetUpdateableProperties(entityToUpdate).ToArray();
+                var nonIdProps = GetUpdateableProperties<T>().ToArray();
 
                 for (var i = 0; i < nonIdProps.Length; i++)
                 {
@@ -1043,17 +1053,14 @@ namespace Dapper
                 var addedAny = false;
                 foreach (var property in propertyInfos)
                 {
-                    if (TryGetAttributeNamed(property, nameof(IgnoreSelectAttribute), out _)
-                        || TryGetAttributeNamed(property, nameof(NotMappedAttribute), out _))
+                    if (TryGetAttributeNamed(property, nameof(IgnoreSelectAttribute), out _))
                     {
                         continue;
                     }
-
                     if (addedAny)
                     {
                         sb.Append(",");
                     }
-
                     sb.Append(GetColumnName(property));
                     //if there is a custom column name add an "as customcolumnname" to the item so it maps properly
                     if (TryGetAttribute(property, out ColumnAttribute attr))
@@ -1068,30 +1075,36 @@ namespace Dapper
 
         private static void BuildWhere<TEntity>(StringBuilder sb, PropertyInfo[] whereConditionProperties, object whereConditions = null)
         {
+            var sourceProperties = GetScaffoldableProperties(typeof(TEntity));
             var addedAny = false;
-            foreach (var prop in whereConditionProperties)
+
+            foreach (var whereProp in whereConditionProperties)
             {
                 var useIsNull = false;
 
                 // Match up generic properties to source entity properties to allow fetching of the column attribute
                 // The anonymous object used for search doesn't have the custom attributes attached to them so this allows us to build the correct where clause
                 // by converting the model type to the database column name via the column attribute
-                var sourceProperties = GetScaffoldableProperties<TEntity>();
-                var propertyToUse = prop;
+                PropertyInfo propertyToUse = null;
                 foreach (var sourceProperty in sourceProperties)
                 {
-                    if (sourceProperty.Name != propertyToUse.Name) continue;
+                    if (sourceProperty.Name != whereProp.Name) continue;
+
+                    propertyToUse = sourceProperty;
 
                     if (whereConditions != null 
-                        && propertyToUse.CanRead 
-                        && (propertyToUse.GetValue(whereConditions, null) == null || propertyToUse.GetValue(whereConditions, null) == DBNull.Value))
+                        && whereProp.CanRead 
+                        && (whereProp.GetValue(whereConditions, null) == null || whereProp.GetValue(whereConditions, null) == DBNull.Value))
                     {
                         useIsNull = true;
                     }
-                    propertyToUse = sourceProperty;
                     break;
                 }
 
+                if (propertyToUse == null)
+                {
+                    throw new ArgumentOutOfRangeException($"Unknown or unmapped property '{whereProp.Name}'");
+                }
                 if (addedAny)
                 {
                     sb.AppendFormat(" and ");
@@ -1110,11 +1123,12 @@ namespace Dapper
         //Not marked with the [Key] attribute (without required attribute)
         //Not marked with [IgnoreInsert]
         //Not marked with [NotMapped]
-        private static void BuildInsertValues<T>(StringBuilder masterSb)
+        internal static void BuildInsertValues<T>(StringBuilder masterSb)
         {
-            StringBuilderCache(masterSb, $"{typeof(T).FullName}_BuildInsertValues", sb =>
+            var type = typeof(T);
+            StringBuilderCache(masterSb, $"{type.FullName}_BuildInsertValues", sb =>
             {
-                var props = GetScaffoldableProperties<T>().ToArray();
+                var props = GetScaffoldableProperties(type).ToArray();
                 var addedAny = false;
                 foreach (var property in props)
                 {
@@ -1140,9 +1154,10 @@ namespace Dapper
         //marked with [NotMapped]
         private static void BuildInsertParameters<T>(StringBuilder masterSb)
         {
-            StringBuilderCache(masterSb, $"{typeof(T).FullName}_BuildInsertParameters", sb =>
+            var type = typeof(T);
+            StringBuilderCache(masterSb, $"{type.FullName}_BuildInsertParameters", sb =>
             {
-                var props = GetScaffoldableProperties<T>().ToArray();
+                var props = GetScaffoldableProperties(type).ToArray();
                 var addedAny = false;
                 foreach (var property in props)
                 {
@@ -1157,24 +1172,28 @@ namespace Dapper
             });
         }
 
-        //Get all properties in an entity
+        // Get all properties in an entity
         private static IEnumerable<PropertyInfo> GetAllProperties<T>(T entity) where T : class
         {
             if (entity == null) return new PropertyInfo[0];
             return entity.GetType().GetProperties();
         }
 
-        //Get all properties that are not decorated with the Editable(false) attribute
-        private static PropertyInfo[] GetScaffoldableProperties<T>()
+        // Get all properties that are:
+        // - Not decorated with Editable(false) or NotMapped
+        // - Simple (int, bool, string, etc.)
+        // - Or not simple but decorated with the Editable(true) attribute
+        internal static PropertyInfo[] GetScaffoldableProperties(Type type)
         {
-            var type = typeof(T);
             if (ScaffoldableProperties.TryGetValue(type, out var result)) return result;
+
             result = type
                 .GetProperties()
                 .Where(p =>
                 {
                     var isEditable = IsEditableProperty(p);
                     if (isEditable == false) return false;
+                    if (TryGetAttributeNamed(p, nameof(NotMappedAttribute), out _)) return false;
                     return p.PropertyType.IsSimpleType() || isEditable == true;
                 })
                 .ToArray();
@@ -1182,43 +1201,58 @@ namespace Dapper
             return result;
         }
 
-        //Get all properties that are:
-        //Not named Id
-        //Not marked with the Key attribute
-        //Not marked ReadOnly
-        //Not marked IgnoreInsert
-        //Not marked NotMapped
-        private static IEnumerable<PropertyInfo> GetUpdateableProperties<T>(T entity)
+        /// <summary>
+        /// Get all properties that are:
+        /// - Not named Id
+        /// - Not marked with the Key attribute
+        /// - Not marked ReadOnly
+        /// - Not marked IgnoreInsert
+        /// - Not marked NotMapped
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <returns></returns>
+        private static IEnumerable<PropertyInfo> GetUpdateableProperties<T>()
         {
-            var updateableProperties = GetScaffoldableProperties<T>()
+            var updateableProperties = GetScaffoldableProperties(typeof(T))
                 .Where(p => !IsIdProperty(p)
                             && !IsKeyProperty(p)
                             && !IsReadOnlyProperty(p)
-                            && !TryGetAttributeNamed(p, nameof(IgnoreUpdateAttribute), out _)
-                            && !TryGetAttributeNamed(p, nameof(NotMappedAttribute), out _))
+                            && !TryGetAttributeNamed(p, nameof(IgnoreUpdateAttribute), out _))
                 .ToArray();
             return updateableProperties;
         }
 
-        //Get all properties that are named Id or have the Key attribute
-        //For Inserts and updates we have a whole entity so this method is used
+        /// <summary>
+        /// Get all properties that are named Id or have the Key attribute
+        /// For Inserts and updates we have a whole entity so this method is used 
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <returns></returns>
         private static PropertyInfo[] GetIdProperties(object entity)
         {
             var type = entity.GetType();
             return GetIdProperties(type);
         }
 
-        //Gets the table name for this entity
-        //For Inserts and updates we have a whole entity so this method is used
-        //Uses class name by default and overrides if the class has a Table attribute
+        /// <summary>
+        /// Gets the table name for this entity
+        /// For Inserts and updates we have a whole entity so this method is used
+        /// Uses class name by default and overrides if the class has a Table attribute 
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <returns></returns>
         private static string GetTableName(object entity)
         {
             var type = entity.GetType();
             return GetTableName(type);
         }
 
-        //Get all properties that are named Id or have the Key attribute
-        //For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
+        /// <summary>
+        /// Get all properties that are named Id or have the Key attribute
+        /// For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
         private static PropertyInfo[] GetIdProperties(Type type)
         {
             if (IdProperties.TryGetValue(type, out var idProperties))
@@ -1287,6 +1321,20 @@ namespace Dapper
             return false;
         }
 
+        private static bool TryGetAttributeNamed(Type type, string name, out dynamic attribute)
+        {
+            foreach (var attr in type.GetCustomAttributes(true))
+            {
+                if (attr.GetType().Name == name)
+                {
+                    attribute = attr;
+                    return true;
+                }
+            }
+            attribute = null;
+            return false;
+        }
+
         private static bool TryGetAttributeNamed(PropertyInfo property, string name, out dynamic attribute)
         {
             foreach (var attr in property.GetCustomAttributes(true))
@@ -1304,7 +1352,6 @@ namespace Dapper
         private static bool IsPropertyToUpdateOrInsert(PropertyInfo property)
         {
             if (TryGetAttributeNamed(property, nameof(IgnoreInsertAttribute), out _)
-                || TryGetAttributeNamed(property, nameof(NotMappedAttribute), out _)
                 || IsReadOnlyProperty(property))
                 return false;
 
@@ -1317,15 +1364,17 @@ namespace Dapper
             return true;
         }
 
-        //Gets the table name for this type
-        //For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
-        //Use dynamic type to be able to handle both our Table-attribute and the DataAnnotation
-        //Uses class name by default and overrides if the class has a Table attribute
+        /// <summary>
+        /// Gets the table name for this type
+        /// For Get(id) and Delete(id) we don't have an entity, just the type so this method is used
+        /// Use dynamic type to be able to handle both our Table-attribute and the DataAnnotation
+        /// Uses class name by default and overrides if the class has a Table attribute
+        /// </summary>
+        /// <param name="type"></param>
+        /// <returns></returns>
         private static string GetTableName(Type type)
         {
-            string tableName;
-
-            if (TableNames.TryGetValue(type, out tableName))
+            if (TableNames.TryGetValue(type, out var tableName))
                 return tableName;
 
             tableName = _tableNameResolver.ResolveTableName(type);
@@ -1337,7 +1386,7 @@ namespace Dapper
 
         private static string GetColumnName(PropertyInfo propertyInfo)
         {
-            string columnName, key = string.Format("{0}.{1}", propertyInfo.DeclaringType, propertyInfo.Name);
+            string columnName, key = $"{propertyInfo.DeclaringType}.{propertyInfo.Name}";
 
             if (ColumnNames.TryGetValue(key, out columnName))
                 return columnName;
@@ -1349,10 +1398,11 @@ namespace Dapper
             return columnName;
         }
 
-        private static string Encapsulate(string databaseword)
+        private static string Encapsulate(string databaseWord)
         {
-            return string.Format(_encapsulation, databaseword);
+            return string.Format(_encapsulation, databaseWord);
         }
+
         /// <summary>
         /// Generates a GUID based on the current date/time
         /// http://stackoverflow.com/questions/1752004/sequential-guid-generator-c-sharp
@@ -1360,16 +1410,32 @@ namespace Dapper
         /// <returns></returns>
         public static Guid SequentialGuid()
         {
-            var tempGuid = Guid.NewGuid();
-            var bytes = tempGuid.ToByteArray();
-            var time = DateTime.Now;
-            bytes[3] = (byte)time.Year;
-            bytes[2] = (byte)time.Month;
-            bytes[1] = (byte)time.Day;
-            bytes[0] = (byte)time.Hour;
-            bytes[5] = (byte)time.Minute;
-            bytes[4] = (byte)time.Second;
-            return new Guid(bytes);
+            return _sequentialGuidGenerator.NewGuid();
+        }
+
+        public interface ISequentialGuidGenerator
+        {
+            Guid NewGuid();
+        }
+
+        /// <summary>
+        /// TODO: Is this specific to SQL Server or does it also work for PostgreSQL?
+        /// </summary>
+        public class SequentialGuidGenerator : ISequentialGuidGenerator
+        {
+            public Guid NewGuid()
+            {
+                var tempGuid = Guid.NewGuid();
+                var bytes = tempGuid.ToByteArray();
+                var time = DateTime.Now;
+                bytes[3] = (byte) time.Year;
+                bytes[2] = (byte) time.Month;
+                bytes[1] = (byte) time.Day;
+                bytes[0] = (byte) time.Hour;
+                bytes[5] = (byte) time.Minute;
+                bytes[4] = (byte) time.Second;
+                return new Guid(bytes);
+            }
         }
 
         /// <summary>
@@ -1381,6 +1447,69 @@ namespace Dapper
             PostgreSQL,
             SQLite,
             MySQL,
+        }
+
+        public interface INameFormatter
+        {
+            string Format(string name);
+        }
+
+        public class DefaultNameFormatter : INameFormatter
+        {
+            public string Format(string name)
+            {
+                return name;
+            }
+        }
+
+        public class LowercaseFormatter : SimpleCRUD.INameFormatter
+        {
+            public string Format(string name)
+            {
+                return name.ToLowerInvariant();
+            }
+        }
+
+        /// <summary>
+        /// Transforms e.g. "MyProperty" into "my_property"
+        /// </summary>
+        public class LowercaseUnderscoreFormatter : SimpleCRUD.INameFormatter
+        {
+            public string Format(string name)
+            {
+                StringBuilder sb = new StringBuilder();
+                bool addUnderscore = false;
+                foreach (var c in name)
+                {
+                    if (char.IsDigit(c))
+                    {
+                        if (addUnderscore) sb.Append('_');
+                        sb.Append(c);
+                        addUnderscore = false;
+                    }
+                    else if (char.IsUpper(c))
+                    {
+                        if (sb.Length > 0 || addUnderscore)
+                        {
+                            sb.Append("_");
+                        }
+
+                        sb.Append(char.ToLowerInvariant(c));
+                        addUnderscore = false;
+                    }
+                    else if (char.IsLetter(c))
+                    {
+                        if (addUnderscore) sb.Append('_');
+                        sb.Append(c);
+                        addUnderscore = false;
+                    }
+                    else
+                    {
+                        addUnderscore = true;
+                    }
+                }
+                return sb.ToString();
+            }
         }
 
         public interface ITableNameResolver
@@ -1395,12 +1524,21 @@ namespace Dapper
 
         public class TableNameResolver : ITableNameResolver
         {
+            private readonly INameFormatter _nameFormatter;
+
+            public TableNameResolver(INameFormatter nameFormatter)
+            {
+                _nameFormatter = nameFormatter;
+            }
+
+            public TableNameResolver() : this(new DefaultNameFormatter())
+            {
+            }
+
             public virtual string ResolveTableName(Type type)
             {
-                var tableName = Encapsulate(type.Name);
-
-                var tableattr = type.GetCustomAttributes(true).SingleOrDefault(attr => attr.GetType().Name == nameof(TableAttribute)) as dynamic;
-                if (tableattr != null)
+                string tableName;
+                if (TryGetAttributeNamed(type, nameof(TableAttribute), out dynamic tableattr))
                 {
                     tableName = Encapsulate(tableattr.Name);
                     try
@@ -1416,25 +1554,42 @@ namespace Dapper
                         //Schema doesn't exist on this attribute.
                     }
                 }
-
+                else
+                {
+                    tableName = Encapsulate(_nameFormatter.Format(type.Name));
+                }
                 return tableName;
             }
         }
 
         public class ColumnNameResolver : IColumnNameResolver
         {
+            private readonly INameFormatter _nameFormatter;
+
+            public ColumnNameResolver(INameFormatter nameFormatter)
+            {
+                 _nameFormatter = nameFormatter;
+            }
+
+            public ColumnNameResolver() : this(new DefaultNameFormatter())
+            {
+            }
+
             public virtual string ResolveColumnName(PropertyInfo propertyInfo)
             {
-                var columnName = Encapsulate(propertyInfo.Name);
+                string columnName;
 
-                var columnattr = propertyInfo.GetCustomAttributes(true).SingleOrDefault(attr => attr.GetType().Name == typeof(ColumnAttribute).Name) as dynamic;
-                if (columnattr != null)
+                if (TryGetAttributeNamed(propertyInfo, nameof(ColumnAttribute), out dynamic columnAttr))
                 {
-                    columnName = Encapsulate(columnattr.Name);
+                    columnName = columnAttr.Name;
                     if (Debugger.IsAttached)
                         Trace.WriteLine(String.Format("Column name for type overridden from {0} to {1}", propertyInfo.Name, columnName));
                 }
-                return columnName;
+                else
+                {
+                    columnName = _nameFormatter.Format(propertyInfo.Name);
+                }
+                return Encapsulate(columnName);
             }
         }
     }

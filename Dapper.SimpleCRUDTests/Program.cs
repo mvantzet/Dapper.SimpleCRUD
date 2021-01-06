@@ -98,7 +98,6 @@ namespace Dapper.SimpleCRUDTests
                 connection.Execute(@" CREATE TABLE GradingScale ([ScaleID] [int] IDENTITY(1,1) NOT NULL, [AppID] [int] NULL, [ScaleName] [nvarchar](50) NOT NULL, [IsDefault] [bit] NOT NULL)");
                 connection.Execute(@" CREATE TABLE KeyMaster ([Key1] [int] NOT NULL, [Key2] [int] NOT NULL, CONSTRAINT [PK_KeyMaster] PRIMARY KEY CLUSTERED ([Key1] ASC, [Key2] ASC))");
                 connection.Execute(@" CREATE TABLE [dbo].[stringtest]([stringkey] [varchar](50) NOT NULL,[name] [varchar](50) NOT NULL, CONSTRAINT [PK_stringkey] PRIMARY KEY CLUSTERED ([stringkey] ASC))");
-
             }
             Console.WriteLine("Created database");
         }
@@ -131,6 +130,9 @@ namespace Dapper.SimpleCRUDTests
                 connection.Execute(@" CREATE TABLE ""GradingScale"" (""ScaleID"" SERIAL PRIMARY KEY NOT NULL, ""AppID"" int, ""ScaleName"" varchar(50) NOT NULL, ""IsDefault"" bit NOT NULL)");
                 connection.Execute(@" CREATE TABLE ""KeyMaster"" (""Key1"" int NOT NULL, ""Key2"" int NOT NULL, CONSTRAINT keymaster_pk PRIMARY KEY (""Key1"", ""Key2""))");
                 connection.Execute(@" CREATE TABLE ""StringTest"" (stringkey varchar(50) NOT NULL, name varchar(50) NOT NULL, CONSTRAINT stringkey_pk PRIMARY KEY (stringkey))");
+
+                // Pg specific test
+                connection.Execute(@" CREATE TABLE user2 (id SERIAL PRIMARY KEY, firstname TEXT, lastname TEXT, scheduleddayoff TEXT NULL)");
             }
         }
 
@@ -187,13 +189,22 @@ namespace Dapper.SimpleCRUDTests
 
         private static void RunTests(SimpleCRUD.Dialect dialect, params string[] excludeTestsContaining)
         {
-            var tester = new Tests(dialect);
-            foreach (var method in typeof(Tests).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+            RunTests(new Tests(dialect), dialect, excludeTestsContaining);
+        }
+
+        private static void RunTests(object tester, SimpleCRUD.Dialect dialect, params string[] excludeTestsContaining)
+        {
+            RunTests(tester, " in " + dialect, excludeTestsContaining);
+        }
+
+        private static void RunTests(object tester, string logPostfix = "", params string[] excludeTestsContaining)
+        {
+            foreach (var method in tester.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             {
                 //skip schema tests
                 if (excludeTestsContaining.Any(t => method.Name.Contains(t))) continue;
                 var stopwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name + " in " + dialect);
+                Console.Write("Running " + method.Name + logPostfix);
                 method.Invoke(tester, null);
                 Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
             }
@@ -202,17 +213,7 @@ namespace Dapper.SimpleCRUDTests
         private static void RunNonDbTests()
         {
             var stopwatch2 = Stopwatch.StartNew();
-            var tester = new NonDbTests();
-            foreach (var method in tester.GetType()
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
-            {
-                //skip schema tests
-                var stopwatch = Stopwatch.StartNew();
-                Console.Write("Running " + method.Name);
-                method.Invoke(tester, null);
-                stopwatch.Stop();
-                Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
-            }
+            RunTests(new NonDbTests());
             stopwatch2.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch2.Elapsed);
         }
@@ -244,6 +245,7 @@ namespace Dapper.SimpleCRUDTests
         {
             var stopwatch = Stopwatch.StartNew();
             RunTests(SimpleCRUD.Dialect.PostgreSQL);
+            RunTests(new PgTests(), SimpleCRUD.Dialect.PostgreSQL);
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
             Console.Write("PostgreSQL testing complete.");

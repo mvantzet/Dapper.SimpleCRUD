@@ -1831,6 +1831,18 @@ public class EnumString<T>
         return _enum.ToString();
     }
 
+    public override bool Equals(object obj)
+    {
+        if (ReferenceEquals(this, obj)) return true;
+        if (!(obj is EnumString<T> t)) return false;
+        return EqualityComparer<T>.Default.Equals(_enum, t._enum);
+    }
+
+    public override int GetHashCode()
+    {
+        return EqualityComparer<T>.Default.GetHashCode(_enum);
+    }
+
     // Add various implicit casts to make it easier to work with EnumString, e.g. user.DayOfWeek = DayOfWeek.Friday, if (user.DayOfWeek == DayOfWeek.Friday) etc.
     public static implicit operator string(EnumString<T> value) => value?.ToString();
 

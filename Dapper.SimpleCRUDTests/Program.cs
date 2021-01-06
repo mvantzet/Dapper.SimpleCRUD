@@ -238,7 +238,7 @@ namespace Dapper.SimpleCRUDTests
                 catch (Exception)
                 { }
             }
-            Console.Write("SQL Server testing complete.");
+            Console.WriteLine("SQL Server testing complete.");
         }
 
         private static void RunTestsPostgreSQL()
@@ -248,7 +248,7 @@ namespace Dapper.SimpleCRUDTests
             RunTests(new PgTests(), SimpleCRUD.Dialect.PostgreSQL);
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
-            Console.Write("PostgreSQL testing complete.");
+            Console.WriteLine("PostgreSQL testing complete.");
         }
 
         private static void RunTestsSqLite()
@@ -257,7 +257,7 @@ namespace Dapper.SimpleCRUDTests
             RunTests(SimpleCRUD.Dialect.SQLite, "Schema");
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
-            Console.Write("SQLite testing complete.");
+            Console.WriteLine("SQLite testing complete.");
         }
 
         private static void RunTestsMySQL()
@@ -266,8 +266,7 @@ namespace Dapper.SimpleCRUDTests
             RunTests(SimpleCRUD.Dialect.MySQL, "Schema", "Guid");
             stopwatch.Stop();
             Console.WriteLine("Time elapsed: {0}", stopwatch.Elapsed);
-
-            Console.Write("MySQL testing complete.");
+            Console.WriteLine("MySQL testing complete.");
         }
     }
 }

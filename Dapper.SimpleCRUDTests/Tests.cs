@@ -41,8 +41,8 @@ namespace Dapper.SimpleCRUDTests
         [Key]
         public int Id { get; set; }
         public string Text { get; set; }
-        public int UserId { get; set; }
-        public int ModeratorId { get; set; }
+        public int? UserId => User?.Id;
+        public int? ModeratorId => Moderator?.Id;
         public User User { get; set; }
         public User Moderator { get; set; }
     }
@@ -227,10 +227,13 @@ namespace Dapper.SimpleCRUDTests
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday });
-                var user2 = (int?)connection.Insert(new User {Name = "Sally", Age = 30});
-                var post = connection.Insert(new Post {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value });
-                var post2 = connection.Insert(new Post {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value });
+                var user = new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday};
+                var user2 = new User {Name = "Sally", Age = 30};
+                connection.Insert(user);
+                connection.Insert(user2);
+
+                var post = connection.Insert(new Post {Text = "Test post", User = user, Moderator = user2 });
+                var post2 = connection.Insert(new Post {Text = "Test post 2", User = user, Moderator = user2 });
 
                 var posts = connection.Query<Post, User, User, Post>(@"select p.*, 1 as xyz, u.*, 1 as xyz, u2.* 
 from ""Posts"" p,""Users"" u, ""Users"" u2
@@ -251,12 +254,14 @@ and p.""ModeratorId"" = u2.""Id""", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30});
-                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = new User {Name = "Harry", Age = 30};
+                var user2 = new User {Name = "Sally", Age = 30};
+                connection.Insert(user);
+                connection.Insert(user2);
                 var post = connection.Insert(new Post
-                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post", User = user, Moderator = user2});
                 var post2 = connection.Insert(new Post
-                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post 2", User = user, Moderator = user2});
 
                 var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
 from ""Posts"" p,""Users"" u, ""Users"" u2
@@ -279,12 +284,14 @@ order by p.""Id"" desc", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday });
-                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday};
+                var user2 = new User {Name = "Sally", Age = 30};
+                var userId = connection.Insert(user);
+                var user2Id = connection.Insert(user2);
                 var post = connection.Insert(new Post
-                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post", User = user, Moderator = user2});
                 var post2 = connection.Insert(new Post
-                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post 2", User = user, Moderator = user2});
 
                 var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
 from ""Posts"" p,""Users"" u, ""Users"" u2
@@ -325,12 +332,14 @@ order by p.""Id"" desc", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday});
-                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday};
+                var user2 = new User {Name = "Sally", Age = 30};
+                connection.Insert(user);
+                connection.Insert(user2);
                 var post = connection.Insert(new Post
-                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post", User = user, Moderator = user2});
                 var post2 = connection.Insert(new Post
-                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post 2", User = user, Moderator = user2});
 
                 var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
 from ""Posts"" p,""Users"" u, ""Users"" u2
@@ -369,12 +378,14 @@ order by p.""Id"" desc", (p, u, u2) =>
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?) connection.Insert(new User {Name = "Harry", Age = 30});
-                var user2 = (int?) connection.Insert(new User {Name = "Sally", Age = 30});
+                var user = new User {Name = "Harry", Age = 30};
+                var user2 = new User {Name = "Sally", Age = 30};
+                connection.Insert(user);
+                connection.Insert(user2);
                 var post = connection.Insert(new Post
-                    {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post", User = user, Moderator = user2});
                 var post2 = connection.Insert(new Post
-                    {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value});
+                    {Text = "Test post 2", User = user, Moderator = user2});
 
                 var posts = connection.MultiQuery<Post, User, User, Post>(@"select p.* ||| u.* ||| u2.* 
 from ""Posts"" p,""Users"" u, ""Users"" u2

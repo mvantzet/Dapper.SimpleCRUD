@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
@@ -162,15 +163,15 @@ namespace Dapper
 
             var name = GetTableName(currenttype);
             var sb = new StringBuilder();
-            sb.Append("Select ");
+            sb.Append("SELECT ");
             //create a new empty instance of the type to get the base properties
             BuildSelect(sb, GetScaffoldableProperties(currenttype));
-            sb.AppendFormat(" from {0} where ", name);
+            sb.AppendFormat(" FROM {0} WHERE ", name);
 
             for (var i = 0; i < idProps.Length; i++)
             {
                 if (i > 0)
-                    sb.Append(" and ");
+                    sb.Append(" AND ");
                 sb.AppendFormat("{0} = @{1}", GetColumnName(idProps[i]), idProps[i].Name);
             }
 
@@ -868,12 +869,12 @@ namespace Dapper
             var name = GetTableName(currenttype);
 
             var sb = new StringBuilder();
-            sb.AppendFormat("Delete from {0} where ", name);
+            sb.AppendFormat("DELETE FROM {0} WHERE ", name);
 
             for (var i = 0; i < idProps.Length; i++)
             {
                 if (i > 0)
-                    sb.Append(" and ");
+                    sb.Append(" AND ");
                 sb.AppendFormat("{0} = @{1}", GetColumnName(idProps[i]), idProps[i].Name);
             }
 
@@ -1036,20 +1037,23 @@ namespace Dapper
         {
             StringBuilderCache(masterSb, $"{typeof(T).FullName}_BuildUpdateSet", sb =>
             {
-                var nonIdProps = GetUpdateableProperties<T>().ToArray();
+                var nonIdProps = GetUpdateableProperties<T>();
 
-                for (var i = 0; i < nonIdProps.Length; i++)
+                var addedAny = false;
+                foreach (var property in nonIdProps)
                 {
-                    var property = nonIdProps[i];
-
+                    if (addedAny) sb.Append(", ");
                     sb.AppendFormat("{0} = @{1}", GetColumnName(property), property.Name);
-                    if (i < nonIdProps.Length - 1)
-                        sb.AppendFormat(", ");
+                    addedAny = true;
                 }
             });
         }
 
-        //build select clause based on list of properties skipping ones with the IgnoreSelect and NotMapped attribute
+        /// <summary>
+        /// build select clause based on list of properties skipping ones with the IgnoreSelect and NotMapped attribute 
+        /// </summary>
+        /// <param name="masterSb"></param>
+        /// <param name="propertyInfos"></param>
         private static void BuildSelect(StringBuilder masterSb, PropertyInfo[] propertyInfos)
         {
             StringBuilderCache(masterSb, $"{propertyInfos.CacheKey()}_BuildSelect", sb =>
@@ -1140,10 +1144,7 @@ namespace Dapper
                     {
                         continue;
                     }
-                    if (addedAny)
-                    {
-                        sb.Append(", ");
-                    }
+                    if (addedAny) sb.Append(", ");
                     sb.AppendFormat("@{0}", property.Name);
                     addedAny = true;
                 }
@@ -1237,7 +1238,7 @@ namespace Dapper
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <returns></returns>
-        private static IEnumerable<PropertyInfo> GetUpdateableProperties<T>()
+        private static PropertyInfo[] GetUpdateableProperties<T>()
         {
             var updateableProperties = GetScaffoldableProperties(typeof(T))
                 .Where(p => !IsIdProperty(p)
@@ -1282,8 +1283,9 @@ namespace Dapper
         private static PropertyInfo[] GetIdProperties(Type type)
         {
             if (IdProperties.TryGetValue(type, out var idProperties))
+            {
                 return idProperties;
-
+            }
             PropertyInfo idPropertyInfo = null;
             var keyProperties = new List<PropertyInfo>();
             foreach (var prop in type.GetProperties())
@@ -1605,7 +1607,11 @@ namespace Dapper
             {
                 string columnName;
 
-                if (TryGetAttributeNamed(propertyInfo, nameof(ColumnAttribute), out dynamic columnAttr))
+                if (TryGetAttributeNamed(propertyInfo, nameof(ForeignKeyAttribute), out dynamic foreignKeyAttribute))
+                {
+                    columnName = foreignKeyAttribute.Name;
+                }
+                else if (TryGetAttributeNamed(propertyInfo, nameof(ColumnAttribute), out dynamic columnAttr))
                 {
                     columnName = columnAttr.Name;
                     if (Debugger.IsAttached)

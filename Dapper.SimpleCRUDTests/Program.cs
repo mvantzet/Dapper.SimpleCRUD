@@ -133,6 +133,7 @@ namespace Dapper.SimpleCRUDTests
 
                 // Pg specific test
                 connection.Execute(@" CREATE TABLE user2 (id SERIAL PRIMARY KEY, firstname TEXT, lastname TEXT, scheduleddayoff TEXT NULL)");
+                connection.Execute(@" CREATE TABLE post2 (id SERIAL PRIMARY KEY, text TEXT, author_id INTEGER NOT NULL)");
             }
         }
 
@@ -205,8 +206,18 @@ namespace Dapper.SimpleCRUDTests
                 if (excludeTestsContaining.Any(t => method.Name.Contains(t))) continue;
                 var stopwatch = Stopwatch.StartNew();
                 Console.Write("Running " + method.Name + logPostfix);
-                method.Invoke(tester, null);
-                Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
+                try
+                {
+                    method.Invoke(tester, null);
+                    Console.WriteLine(" - OK! {0}ms", stopwatch.ElapsedMilliseconds);
+                }
+                catch (Exception ex)
+                {
+                    var oldColor = Console.ForegroundColor;
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine(" - NOT OK! {0}ms - Exception: {1}", stopwatch.ElapsedMilliseconds, ex.Message);
+                    Console.ForegroundColor = oldColor;
+                }
             }
         }
 

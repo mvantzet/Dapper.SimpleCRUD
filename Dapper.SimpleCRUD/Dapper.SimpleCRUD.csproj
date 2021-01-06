@@ -23,5 +23,10 @@
     <DocumentationFile>bin\Release\netstandard2.0\Dapper.SimpleCRUD.xml</DocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Dapper.SimpleCRUDTests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
 </Project>

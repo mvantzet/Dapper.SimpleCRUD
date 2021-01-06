@@ -2,13 +2,12 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Text;
 
 namespace Dapper
 {
     public static partial class SimpleCRUD
     {
-        public class CachingNameResolver : SimpleCRUD.IColumnNameResolver, SimpleCRUD.ITableNameResolver
+        public class CachingNameResolver : IColumnNameResolver, ITableNameResolver
         {
             private class Mapping
             {
@@ -40,7 +39,7 @@ namespace Dapper
                     {
                         TableName = _tableNameResolver.ResolveTableName(type)
                     };
-                    foreach (var p in type.GetProperties())
+                    foreach (var p in GetScaffoldableProperties(type))
                     {
                         mapping.ColumnName.Add(p, _columnNameResolver.ResolveColumnName(p));
                     }

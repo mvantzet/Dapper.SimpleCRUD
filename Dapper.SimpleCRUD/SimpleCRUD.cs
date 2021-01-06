@@ -1649,7 +1649,7 @@ namespace Dapper
                 {
                     // Find closing brace after "@Param?{"
                     var start = m.Index + m.Length;
-                    if (!TryFindClosingBrace(sql, start, out int end, out string innerText))
+                    if (!TryFindIfElse(sql, start, out int end, out string ifText, out string elseText))
                     {
                         throw new FormatException("Could not find closing brace for expression at index " + m.Index);
                     }
@@ -1663,27 +1663,30 @@ namespace Dapper
                     // Add everything up to where we found the opening "?@Prop{"
                     sb.Append(sql.Substring(searchFrom, m.Index - searchFrom));
 
-                    bool includeInnerText;
+                    bool condition;
                     var parameterName = m.Groups["Name"].Value;
                     if (!parameterLookup.TryGetValue(parameterName, out object val) || val == null)
                     {
                         // There is no property with the extracted name, or it is null, do not include
-                        includeInnerText = false;
+                        condition = false;
                     }
                     else if (val is bool b)
                     {
-                        includeInnerText = b;
+                        condition = b;
                     }
                     else
                     {
-                        includeInnerText = true;
+                        condition = true;
                     }
 
-                    if (includeInnerText)
+                    if (condition)
                     {
-                        sb.Append(innerText);
+                        sb.Append(ifText);
                     }
-
+                    else if (elseText != null)
+                    {
+                        sb.Append(elseText);
+                    }
                     // Resume search after "}"
                     searchFrom = end + 1;
                 }
@@ -1725,27 +1728,64 @@ namespace Dapper
 
             private static Dictionary<string, object> GetParameterLookup(dynamic parameters)
             {
-                Dictionary<string, object> parameterLookup;
                 PropertyInfo[] props =
                     parameters == null
                         ? Array.Empty<PropertyInfo>()
                         : (PropertyInfo[]) parameters
                             .GetType()
                             .GetProperties(BindingFlags.Instance | BindingFlags.Public);
-                parameterLookup = props.ToDictionary(p => p.Name, p => p.GetValue(parameters));
-                return parameterLookup;
+                return props.ToDictionary(p => p.Name, p => p.GetValue(parameters));
             }
 
-            private static bool TryFindClosingBrace(string sql, int start, out int index, out string innerText)
+            /// <summary>
+            /// Finds if/else strings in format { .. if .. } or { .. if ... }:{ .. else .. }
+            /// </summary>
+            /// <param name="s">string to search</param>
+            /// <param name="start">index of first character after '{'</param>
+            /// <param name="end">index of last '}'</param>
+            /// <param name="ifText">text inside 'if' section if found</param>
+            /// <param name="elseText">text inside 'else' section if found</param>
+            /// <returns>true if 'if' section (optionally also 'else' section) can be found</returns>
+            private static bool TryFindIfElse(string s, int start, out int end, out string ifText,
+                out string elseText)
+            {
+                ifText = null;
+                elseText = null;
+                if (!TryFindClosingBrace(s, start, out end, out ifText))
+                {
+                    return false;
+                }
+                // See if we can find an ":{...}" else-block after this one.
+                start = end + 1;
+                if (start < s.Length - 2
+                    && s[start++] == ':'
+                    && s[start++] == '{'
+                    && TryFindClosingBrace(s, start, out var elseEnd, out elseText))
+                {
+                    end = elseEnd;
+                }
+                else
+                {
+                    elseText = null;
+                }
+                return true;
+            }
+
+            /// <summary>
+            /// Find a closing '}' brace that is not escaped (not preceded by a backslash)
+            /// </summary>
+            /// <param name="s">String to search</param>
+            /// <param name="index">Index where to start search (first character after '{')</param>
+            /// <param name="end">Index where closing brace '}' is located</param>
+            /// <param name="innerText">Unescaped text (backslashes removed)</param>
+            /// <returns></returns>
+            private static bool TryFindClosingBrace(string s, int index, out int end, out string innerText)
             {
                 bool escape = false;
-                // Set j to the start of the inner text, after "?@Prop{".
-                // Set i to the same position and increase it until we find the closing "}"
-                index = start;
                 StringBuilder innerTextBuilder = new StringBuilder();
-                while (index < sql.Length)
+                while (index < s.Length)
                 {
-                    var c = sql[index];
+                    var c = s[index];
                     if (c == '\\')
                     {
                         escape = true;
@@ -1754,17 +1794,16 @@ namespace Dapper
                     {
                         if (c == '}' && !escape)
                         {
+                            end = index;
                             innerText = innerTextBuilder.ToString();
                             return true;
                         }
-
                         innerTextBuilder.Append(c);
                         escape = false;
                     }
-
                     index++;
                 }
-
+                end = -1;
                 innerText = null;
                 return false;
             }

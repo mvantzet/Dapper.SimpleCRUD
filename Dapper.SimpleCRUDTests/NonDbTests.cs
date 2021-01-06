@@ -110,5 +110,23 @@ namespace Dapper.SimpleCRUDTests
                 });
             Assert.IsEqualTo(sql, @"select * from user where id > 10 and firstname like @FirstName || '%' order by lastname, firstname");
         }
+
+        public void TemplateEngineTest_TestElse() {
+            var sql = SimpleCRUD.TemplateEngine.Evaluate(@"select * from user order by @OrderBy?{@@OrderBy}:{id}",
+                new
+                {
+                    OrderBy = "lastname, firstname"
+                });
+            Assert.IsEqualTo(sql, @"select * from user order by lastname, firstname");
+
+            var sql2 = SimpleCRUD.TemplateEngine.Evaluate(@"select * from user order by @OrderBy?{@@OrderBy}:{id}", null);
+            Assert.IsEqualTo(sql2, @"select * from user order by id");
+        }
+
+        public void TemplateEngineTest_UnclosedBrace_ThrowsException()
+        {
+            Assert.Throws<FormatException>(() =>
+                SimpleCRUD.TemplateEngine.Evaluate(@"select * from user order by @OrderBy?{@@OrderBy", null));
+        }
     }
 }

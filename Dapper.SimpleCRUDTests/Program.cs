@@ -84,7 +84,7 @@ namespace Dapper.SimpleCRUDTests
             using (var connection = new SqlConnection(SqlConnectionString))
             {
                 connection.Open();
-                connection.Execute(@" create table Users (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime DEFAULT(getdate())) ");
+                connection.Execute(@" create table Users (Id int IDENTITY(1,1) not null, Name nvarchar(100) not null, Age int not null, ScheduledDayOff nvarchar(100) null, CreatedDate datetime DEFAULT(getdate())) ");
                 connection.Execute(@" create table Posts (Id int PRIMARY KEY AUTOINCREMENT, Text nvarchar(100) not null, UserId int NOT NULL, ModeratorId int NOT NULL ) ");
                 connection.Execute(@" create table Car (CarId int IDENTITY(1,1) not null, Id int null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table BigCar (CarId bigint IDENTITY(2147483650,1) not null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
@@ -117,7 +117,7 @@ namespace Dapper.SimpleCRUDTests
             {
                 connection.Open();
                 connection.Execute(@" CREATE SEQUENCE bigcar_carid_seq START 2147483650");
-                connection.Execute(@" CREATE TABLE ""Users"" (""Id"" SERIAL PRIMARY KEY, ""Name"" varchar not null, ""Age"" int not null, ""ScheduledDayOff"" int null, ""CreatedDate"" date not null default CURRENT_DATE) ");
+                connection.Execute(@" CREATE TABLE ""Users"" (""Id"" SERIAL PRIMARY KEY, ""Name"" varchar not null, ""Age"" int not null, ""ScheduledDayOff"" TEXT null, ""CreatedDate"" date not null default CURRENT_DATE) ");
                 connection.Execute(@" CREATE TABLE ""Posts"" (""Id"" SERIAL PRIMARY KEY, ""Text"" varchar not null, ""UserId"" INTEGER NOT NULL, ""ModeratorId"" INTEGER NOT NULL ) ");
                 connection.Execute(@" CREATE TABLE ""Car"" (""CarId"" SERIAL PRIMARY KEY, ""Id"" INTEGER null, ""Make"" varchar not null, ""Model"" varchar not null) ");
                 connection.Execute(@" CREATE TABLE ""BigCar"" (""CarId"" BIGINT NOT NULL DEFAULT nextval('bigcar_carid_seq'::regclass), ""Make"" varchar not null, ""Model"" varchar not null) ");
@@ -142,7 +142,7 @@ namespace Dapper.SimpleCRUDTests
             using (connection)
             {
                 connection.Open();
-                connection.Execute(@" create table Users (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime default current_timestamp ) ");
+                connection.Execute(@" create table Users (Id INTEGER PRIMARY KEY AUTOINCREMENT, Name nvarchar(100) not null, Age int not null, ScheduledDayOff nvarchar(100) null, CreatedDate datetime default current_timestamp ) ");
                 connection.Execute(@" create table Posts (Id INTEGER PRIMARY KEY AUTOINCREMENT, Text nvarchar(100) not null, UserId INTEGER NOT NULL, ModeratorId INTEGER NOT NULL ) ");
                 connection.Execute(@" create table Car (CarId INTEGER PRIMARY KEY AUTOINCREMENT, Id INTEGER null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table BigCar (CarId INTEGER PRIMARY KEY AUTOINCREMENT, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
@@ -171,7 +171,7 @@ namespace Dapper.SimpleCRUDTests
             using (var connection = new MySqlConnection(MySqlConnectionString))
             {
                 connection.Open();
-                connection.Execute(@" create table Users (Id INTEGER PRIMARY KEY AUTO_INCREMENT, Name nvarchar(100) not null, Age int not null, ScheduledDayOff int null, CreatedDate datetime default current_timestamp ) ");
+                connection.Execute(@" create table Users (Id INTEGER PRIMARY KEY AUTO_INCREMENT, Name nvarchar(100) not null, Age int not null, ScheduledDayOff nvarchar(100) null, CreatedDate datetime default current_timestamp ) ");
                 connection.Execute(@" create table Posts (Id INTEGER PRIMARY KEY AUTO_INCREMENT, Text nvarchar(100) not null, UserId int NOT NULL, ModeratorId int NOT NULL ) ");
                 connection.Execute(@" create table Car (CarId INTEGER PRIMARY KEY AUTO_INCREMENT, Id INTEGER null, Make nvarchar(100) not null, Model nvarchar(100) not null) ");
                 connection.Execute(@" create table BigCar (CarId BIGINT PRIMARY KEY AUTO_INCREMENT, Make nvarchar(100) not null, Model nvarchar(100) not null) ");

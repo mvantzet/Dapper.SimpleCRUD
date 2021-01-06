@@ -25,7 +25,7 @@ namespace Dapper.SimpleCRUDTests
     public class User : UserEditableSettings
     {
         //we modified so enums were automatically handled, we should also automatically handle nullable enums
-        public DayOfWeek? ScheduledDayOff { get; set; }
+        public EnumString<DayOfWeek> ScheduledDayOff { get; set; }
 
         [ReadOnly(true)]
         public DateTime CreatedDate { get; set; }
@@ -227,7 +227,7 @@ namespace Dapper.SimpleCRUDTests
         {
             using (var connection = GetOpenConnection())
             {
-                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30});
+                var user = (int?)connection.Insert(new User {Name = "Harry", Age = 30, ScheduledDayOff = DayOfWeek.Friday });
                 var user2 = (int?)connection.Insert(new User {Name = "Sally", Age = 30});
                 var post = connection.Insert(new Post {Text = "Test post", UserId = user.Value, ModeratorId = user2.Value });
                 var post2 = connection.Insert(new Post {Text = "Test post 2", UserId = user.Value, ModeratorId = user2.Value });
@@ -612,7 +612,7 @@ order by p.""Id"" desc", (p, u, u2) =>
 
                 //assert
                 insertedUser.Name.IsEqualTo("User++");
-                insertedUser.ScheduledDayOff.IsEqualTo(DayOfWeek.Friday);
+                Assert.IsTrue(insertedUser.ScheduledDayOff == DayOfWeek.Friday);
 
                 connection.Delete<User>(user.Id);
             }
@@ -647,7 +647,7 @@ order by p.""Id"" desc", (p, u, u2) =>
             {
                 var id = (int)connection.Insert(new User { Name = "User", Age = 11, ScheduledDayOff = DayOfWeek.Friday });
                 var user1 = connection.Get<User>(id);
-                user1.ScheduledDayOff.IsEqualTo(DayOfWeek.Friday);
+                Assert.IsTrue(user1.ScheduledDayOff == DayOfWeek.Friday);
                 connection.Delete(user1);
             }
         }
@@ -731,7 +731,7 @@ order by p.""Id"" desc", (p, u, u2) =>
             {
                 connection.Insert(new User { Name = "Enum-y", Age = 10, ScheduledDayOff = DayOfWeek.Thursday });
                 var user = connection.GetList<User>(new { Name = "Enum-y" }).FirstOrDefault() ?? new User();
-                user.ScheduledDayOff.IsEqualTo(DayOfWeek.Thursday);
+                Assert.IsTrue(user.ScheduledDayOff == DayOfWeek.Thursday);
                 connection.Delete<User>(user.Id);
             }
         }
@@ -1069,7 +1069,7 @@ order by p.""Id"" desc", (p, u, u2) =>
 
                 //assert
                 insertedUser.Name.IsEqualTo("User++");
-                insertedUser.ScheduledDayOff.IsEqualTo(DayOfWeek.Friday);
+                Assert.IsTrue(insertedUser.ScheduledDayOff == DayOfWeek.Friday);
 
                 connection.Delete<User>(user.Id);
             }

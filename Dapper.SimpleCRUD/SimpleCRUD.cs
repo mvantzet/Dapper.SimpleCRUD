@@ -20,6 +20,7 @@ namespace Dapper
         static SimpleCRUD()
         {
             SetDialect(_dialect);
+            SqlMapper.AddTypeHandler(new EnumStringHandler<DayOfWeek>());
         }
 
         private static Dialect _dialect = Dialect.PostgreSQL;
@@ -1194,11 +1195,33 @@ namespace Dapper
                     var isEditable = IsEditableProperty(p);
                     if (isEditable == false) return false;
                     if (TryGetAttributeNamed(p, nameof(NotMappedAttribute), out _)) return false;
-                    return p.PropertyType.IsSimpleType() || isEditable == true;
+                    return p.PropertyType.IsSimpleType() 
+                           || IsInstanceOfGenericType(p.PropertyType, typeof(EnumString<>))
+                           || isEditable == true;
                 })
                 .ToArray();
             ScaffoldableProperties.AddOrUpdate(type, result, (t, p) => p);
             return result;
+        }
+
+        /// <summary>
+        /// Adapted from https://stackoverflow.com/a/982540
+        /// </summary>
+        /// <param name="genericType"></param>
+        /// <param name="instanceType"></param>
+        /// <returns></returns>
+        static bool IsInstanceOfGenericType(Type type, Type genericType)
+        {
+            while (type != null)
+            {
+                if (type.IsGenericType &&
+                    type.GetGenericTypeDefinition() == genericType)
+                {
+                    return true;
+                }
+                type = type.BaseType;
+            }
+            return false;
         }
 
         /// <summary>
@@ -1592,8 +1615,21 @@ namespace Dapper
                 return Encapsulate(columnName);
             }
         }
-    }
 
+        private class EnumStringHandler<T> : SqlMapper.TypeHandler<EnumString<T>>
+        {
+            public override void SetValue(IDbDataParameter parameter, EnumString<T> value)
+            {
+                parameter.Value = value.ToString();
+            }
+
+            public override EnumString<T> Parse(object value)
+            {
+                return new EnumString<T>((string)value);
+            }
+        }
+    }
+    
     /// <summary>
     /// Optional Table attribute.
     /// You can use the System.ComponentModel.DataAnnotations version in its place to specify the table name of a poco
@@ -1774,4 +1810,33 @@ internal static class TypeExtension
     {
         return string.Join(",",props.Select(p=> p.DeclaringType.FullName + "." + p.Name).ToArray());
     }
+}
+
+public class EnumString<T>
+{
+    private readonly T _enum;
+
+    public EnumString(T val)
+    {
+        _enum = val;
+    }
+
+    public EnumString(string value)
+    {
+        _enum = (T)Enum.Parse(typeof(T), value);
+    }
+
+    public override string ToString()
+    {
+        return _enum.ToString();
+    }
+
+    // Add various implicit casts to make it easier to work with EnumString, e.g. user.DayOfWeek = DayOfWeek.Friday, if (user.DayOfWeek == DayOfWeek.Friday) etc.
+    public static implicit operator string(EnumString<T> value) => value?.ToString();
+
+    public static implicit operator EnumString<T>(string value) => string.IsNullOrEmpty(value) ? null : new EnumString<T>((T)Enum.Parse(typeof(T), value));
+
+    public static implicit operator EnumString<T>(T value) => new EnumString<T>(value);
+
+    public static implicit operator T(EnumString<T> e) => e is default(EnumString<T>) ? default(T) : e._enum;
 }

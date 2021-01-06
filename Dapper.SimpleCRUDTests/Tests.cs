@@ -185,7 +185,7 @@ namespace Dapper.SimpleCRUDTests
         }
         private SimpleCRUD.Dialect _dbtype;
 
-        private IDbConnection GetOpenConnection()
+        protected IDbConnection GetOpenConnection()
         {
             IDbConnection connection;
             if (_dbtype == SimpleCRUD.Dialect.PostgreSQL)

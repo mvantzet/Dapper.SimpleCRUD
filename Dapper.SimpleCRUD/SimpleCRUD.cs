@@ -2066,6 +2066,8 @@ public class EnumString<T>
         _enum = (T)Enum.Parse(typeof(T), value);
     }
 
+    public T Value => _enum;
+
     public override string ToString()
     {
         return _enum.ToString();

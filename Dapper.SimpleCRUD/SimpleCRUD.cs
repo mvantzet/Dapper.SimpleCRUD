@@ -22,7 +22,6 @@ namespace Dapper
         static SimpleCRUD()
         {
             SetDialect(_dialect);
-            SqlMapper.AddTypeHandler(new EnumStringHandler<DayOfWeek>());
         }
 
         private static Dialect _dialect = Dialect.PostgreSQL;
@@ -546,7 +545,11 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TReturn>(sql2, (first, second) =>
+                {
+                    var objects = SetToNullIfMissing(first, second);
+                    return map((TFirst) objects[0], (TSecond) objects[1]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -562,7 +565,10 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TThird, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TThird, TReturn>(sql2, (first, second, third) => {
+                    var objects = SetToNullIfMissing(first, second, third);
+                    return map((TFirst) objects[0], (TSecond) objects[1], (TThird) objects[2]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -578,7 +584,10 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TThird, TFourth, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TReturn>(sql2, (first, second, third, fourth) => {
+                    var objects = SetToNullIfMissing(first, second, third, fourth);
+                    return map((TFirst) objects[0], (TSecond) objects[1], (TThird) objects[2], (TFourth) objects[3]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -594,7 +603,10 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TReturn>(sql2, (first, second, third, fourth, fifth) => {
+                    var objects = SetToNullIfMissing(first, second, third, fourth, fifth);
+                    return map((TFirst) objects[0], (TSecond) objects[1], (TThird) objects[2], (TFourth) objects[3], (TFifth) objects[4]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -610,7 +622,10 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TReturn>(sql2, (first, second, third, fourth, fifth, sixth) => {
+                    var objects = SetToNullIfMissing(first, second, third, fourth, fifth, sixth);
+                    return map((TFirst) objects[0], (TSecond) objects[1], (TThird) objects[2], (TFourth) objects[3], (TFifth) objects[4], (TSixth) objects[5]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -626,7 +641,10 @@ namespace Dapper
             CommandType? commandType = null)
         {
             GetSplittableSql(sql, param, delimiter, out var sql2, out var splitOn);
-            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(sql2, map, param, transaction,
+            return cnn.Query<TFirst, TSecond, TThird, TFourth, TFifth, TSixth, TSeventh, TReturn>(sql2, (first, second, third, fourth, fifth, sixth, theSeventhOne) => {
+                    var objects = SetToNullIfMissing(first, second, third, fourth, fifth, sixth, theSeventhOne);
+                    return map((TFirst) objects[0], (TSecond) objects[1], (TThird) objects[2], (TFourth) objects[3], (TFifth) objects[4], (TSixth) objects[5], (TSeventh) objects[6]);
+                }, param, transaction,
                 buffered, splitOn, commandTimeout, commandType);
         }
 
@@ -650,6 +668,19 @@ namespace Dapper
             sb.Append(sql.Substring(i));
             splittableSql = sb.ToString();
             splitOn = sb2.ToString();
+        }
+
+        private static object[] SetToNullIfMissing(params object[] objects)
+        {
+            var result = new object[objects.Length];
+            for (var index = 0; index < objects.Length; index++)
+            {
+                var obj = objects[index];
+                var idProperties = GetIdProperties(obj.GetType());
+                var key = GetKey(idProperties, obj);
+                result[index] = !key.IsDefined ? null : obj;
+            }
+            return result;
         }
 
         /// <summary>
@@ -1199,9 +1230,13 @@ namespace Dapper
                     var isEditable = IsEditableProperty(p);
                     if (isEditable == false) return false;
                     if (TryGetAttributeNamed(p, nameof(NotMappedAttribute), out _)) return false;
-                    return p.PropertyType.IsSimpleType() 
-                           || IsInstanceOfGenericType(p.PropertyType, typeof(EnumString<>))
-                           || isEditable == true;
+                    if (p.PropertyType.IsSimpleType()) return true;
+                    if (IsInstanceOfGenericType(p.PropertyType, typeof(EnumString<>)))
+                    {
+                        RegisterEnumStringHandler(p.PropertyType);
+                        return true;
+                    }
+                    return isEditable == true;
                 })
                 .ToArray();
             ScaffoldableProperties.AddOrUpdate(type, result, (t, p) => p);
@@ -1623,6 +1658,19 @@ namespace Dapper
                 }
                 return Encapsulate(columnName);
             }
+        }
+
+        private static readonly ConcurrentDictionary<string, object> _enumStringHandlers = new ConcurrentDictionary<string, object>();
+
+        private static void RegisterEnumStringHandler(Type t)
+        {
+            _enumStringHandlers.AddOrUpdate(t.FullName, (type) =>
+            {
+                var enumType = t.GetGenericArguments()[0];
+                var handler = (SqlMapper.ITypeHandler)Activator.CreateInstance(typeof(EnumStringHandler<>).MakeGenericType(enumType));
+                SqlMapper.AddTypeHandler(t, handler);
+                return handler;
+            }, (type, handler) => handler);
         }
 
         private class EnumStringHandler<T> : SqlMapper.TypeHandler<EnumString<T>>

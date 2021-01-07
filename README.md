@@ -1,5 +1,57 @@
 Dapper.SimpleCRUD - simple CRUD helpers for Dapper
 ========================================
+
+Fork
+----
+This is a fork of Dapper.SimpleCRUD that has the following enhancements:
+
+- MultiQuery<T1,T2,T3(,...,T8)> - Enhanced version of Dapper.Query<T1,T2,T3(,...T8)> that
+  uses a special syntax and templating engine to simplify a couple of common use cases.
+  See below.
+- Mapper that supports all-lowercase column names (PostgreSQL)
+- Introduced `EnumString<T>` wrapper around enums to persist the enum as a string.
+
+MultiQuery<>
+------------
+
+The following example shows a couple of features of MultiQuery:
+
+```csharp
+var posts = connection.MultiQuery<Post, User, Post>(@"
+SELECT p.* ||| u.*
+FROM Posts p, Users u
+WHERE p.AuthorId = u.Id
+@Id?{AND p.""Id"" = @Id}
+@FilterByDayOff?{AND u.""ScheduledDayOff"" = @ScheduledDayOff }
+@OrderBy?{ORDER BY p.@@OrderBy}:{ORDER BY p.id DESC}", (p, u) =>
+                {
+                    p.User = u;
+                    return p;
+                }, new {
+                    ScheduledDayOff = DayOfWeek.Monday.ToString(),
+                    FilterByDayOff = false,
+                    OrderBy = "date DESC"
+                });
+```
+
+- You can use a "|||" delimiter between tables. This is automatically replaced by a dummy column name
+  that is specified as the "splitOn" for Dapper. The main reason to introduce this is so that you do
+  not have to know which column of each table comes first; it might change over time or be different
+  across multiple database (version)s.
+
+- The objects that are returned by Dapper's multi query -- in this example `p` and `u` -- are set to 
+  `null` if their primary key is not set, for instance when `u.Id` equals 0. This way it is easier to 
+  spot and handle (non existent) entities that could not be joined.
+
+- You can use syntax `@Param?{ ... }` to optionally include the block if the parameter named 'Param'
+  exists AND is not `null` or `false`. You can also use syntax `@Param?{ ... }:{ ... }` where the last
+  block is executed as an 'else' block (i.e. when the parameter does not exist or it is `null` or `false`).
+
+- You can insert the value of a parameter literally using syntax `@@Param`. 
+  *This should be used only with TRUSTED INPUT as it injects values directly into the SQL.* Use cases are
+  `ORDER BY` or `LIMIT` clauses that are specified server-side.
+
+
 Features
 --------
 <img  align="right" src="https://raw.githubusercontent.com/ericdc1/Dapper.SimpleCRUD/master/images/SimpleCRUD-200x200.png" alt="SimpleCRUD">

@@ -39,7 +39,7 @@ namespace Dapper
                     {
                         TableName = _tableNameResolver.ResolveTableName(type)
                     };
-                    foreach (var p in GetScaffoldableProperties(type))
+                    foreach (var p in GetScaffoldableProperties(type, true))
                     {
                         mapping.ColumnName.Add(p, _columnNameResolver.ResolveColumnName(p));
                     }
